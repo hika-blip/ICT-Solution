@@ -15,6 +15,8 @@
   python osm_to_network.py --point 36.397,140.531 --dist 1500       --orig 36.392,140.525 --dest 36.402,140.538
   # 保存済みの graphml を再利用（再ダウンロードしない）
   python osm_to_network.py --graphml osm_network.graphml       --orig 36.392,140.525 --dest 36.402,140.538 --weight travel_time --algo dijkstra
+  # 背景地図(GeoTIFF)を保存。以後の経路図はこれを使い、通信しない
+  python osm_to_network.py --graphml osm_network.graphml --make-basemap
   # 背景地図を使わず線だけで出力（タイル取得を省略。ネットが不安定なときも高速）
   python osm_to_network.py --graphml osm_network.graphml --orig ... --dest ... --no-map
 
@@ -24,6 +26,7 @@
   <out>_edges.csv     エッジ一覧（始点, 終点, 長さ[m], 道路種別, 名称 など）
   <out>.gpkg          GIS用 GeoPackage（--gpkg 指定時）
   <out>.png           地図の可視化
+  <out>_basemap.tif   背景地図（取得時に自動保存。経路図で再利用）
   <out>_route.csv     最短経路のノード列（--orig/--dest 指定時）
   <out>_route.png     地図画像(OSMタイル)上に経路を重ねた図（--orig/--dest 指定時）
 
@@ -36,6 +39,7 @@ import csv
 import heapq
 import itertools
 import math
+import os
 import socket
 import sys
 
@@ -149,11 +153,43 @@ def shortest_path(G, source, target, weight="length", algo="astar"):
     return None, math.inf
 
 
-def plot_route_on_map(G, path, orig, dest, out_path, use_map=True):
-    """OSM のタイル地図の上に経路を描画して保存する。
+TILE_HEADERS = {"User-Agent": "ICT-Solution-route-viewer/0.1 (student project)"}
+MAX_BASEMAP_TILES = 250  # OSM のタイル利用ポリシー上、一括取得は控えめにする
 
-    タイルの取得にインターネット接続が必要。取得できない場合は
-    地図なし（線のみ）の図にフォールバックする。
+
+def make_basemap(G, path, zoom):
+    """グラフ全体の範囲の背景地図を GeoTIFF として保存する（経路図で再利用）。
+
+    取得枚数が MAX_BASEMAP_TILES を超える場合は、利用ポリシーに配慮して
+    保存せず、ズームを下げるよう案内する。
+    """
+    import contextily as cx
+    nodes = ox.graph_to_gdfs(G, edges=False)
+    west, south, east, north = nodes.total_bounds
+    pad_x, pad_y = (east - west) * 0.03, (north - south) * 0.03
+    bounds = (west - pad_x, south - pad_y, east + pad_x, north + pad_y)
+    n_tiles = cx.howmany(*bounds, zoom, ll=True)
+    if n_tiles > MAX_BASEMAP_TILES:
+        print(f"背景地図を保存しませんでした: ズーム {zoom} では {n_tiles} 枚と多すぎます"
+              f"（上限 {MAX_BASEMAP_TILES}）。--basemap-zoom を下げてください。")
+        return False
+    try:
+        cx.bounds2raster(*bounds, path, zoom=zoom, ll=True,
+                         source=cx.providers.OpenStreetMap.Mapnik,
+                         headers=TILE_HEADERS, timeout=(5, 15))
+    except Exception as e:
+        print(f"背景地図を保存できませんでした: {type(e).__name__}: {e}")
+        return False
+    print(f"背景地図を保存: {path}（ズーム {zoom}, {n_tiles} 枚）")
+    return True
+
+
+def plot_route_on_map(G, path, orig, dest, out_path, use_map=True, basemap=None):
+    """OSM の地図の上に経路を描画して保存する。
+
+    basemap（保存済みの GeoTIFF）があればそれを使う（通信なし）。
+    なければ OSM のタイルをその場で取得する（インターネット接続が必要）。
+    取得できない場合は地図なし（線のみ）の図にフォールバックする。
     """
     nodes = ox.graph_to_gdfs(G, edges=False).to_crs(epsg=3857)
     xs = [nodes.geometry[n].x for n in path]
@@ -171,21 +207,22 @@ def plot_route_on_map(G, path, orig, dest, out_path, use_map=True):
     if use_map:
         try:
             import contextily as cx
-            src = cx.providers.OpenStreetMap.Mapnik
-            # OSM のタイル利用ポリシーにより、アプリを識別できる User-Agent が必須。
-            # timeout=(接続, 読み込み)[秒]: 応答が止まっても無限に待たない。
             west, east = ax.get_xlim()
             south, north = ax.get_ylim()
-            img, ext = cx.bounds2img(
-                west, south, east, north, source=src, ll=False, timeout=(5, 15),
-                headers={"User-Agent": "ICT-Solution-route-viewer/0.1 (student project)"})
-            ax.imshow(img, extent=ext, zorder=1, interpolation="bilinear")
+            if basemap and os.path.exists(basemap):
+                cx.add_basemap(ax, source=basemap, crs="EPSG:3857", attribution="")
+            else:
+                # OSM のタイル利用ポリシーにより、アプリを識別できる User-Agent が必須。
+                # timeout=(接続, 読み込み)[秒]: 応答が止まっても無限に待たない。
+                cx.add_basemap(ax, source=cx.providers.OpenStreetMap.Mapnik,
+                               crs="EPSG:3857", headers=TILE_HEADERS,
+                               timeout=(5, 15), attribution="")
             ax.set_xlim(west, east)
             ax.set_ylim(south, north)
             ax.text(0.01, 0.01, "(C) OpenStreetMap contributors", transform=ax.transAxes,
                     fontsize=8, bbox=dict(facecolor="white", alpha=0.7, lw=0), zorder=5)
         except Exception as e:
-            print(f"  地図タイルを取得できませんでした（線のみで出力）: {type(e).__name__}: {e}")
+            print(f"  背景地図を描画できませんでした（線のみで出力）: {type(e).__name__}: {e}")
     ax.legend(loc="upper right")
     fig.savefig(out_path, dpi=150, bbox_inches="tight")
     plt.close(fig)
@@ -211,7 +248,7 @@ def find_route(G, args):
             w.writerow([i, n, G.nodes[n]["y"], G.nodes[n]["x"]])
     if len(path) > 1:
         plot_route_on_map(G, path, orig, dest, args.out + "_route.png",
-                          use_map=not args.no_map)
+                          use_map=not args.no_map, basemap=args.basemap)
 
     print(f"最短経路 ({args.algo}, weight={args.weight}): {orig} → {dest}")
     print(f"  経由ノード数: {len(path)}  距離: {length:.0f} m"
@@ -265,6 +302,11 @@ def main():
                     help="最短化する量: 距離[m] / 所要時間[s]（既定: length）")
     ap.add_argument("--no-map", action="store_true",
                     help="経路図に背景地図を使わない（タイル取得を省略して高速化）")
+    ap.add_argument("--make-basemap", action="store_true",
+                    help="グラフ範囲の背景地図(<名前>_basemap.tif)を保存する"
+                         "（取得モードでは自動で保存。--graphml 使用時はこの指定で保存）")
+    ap.add_argument("--basemap-zoom", type=int, default=16,
+                    help="背景地図のズームレベル（既定: 16）")
     ap.add_argument("--algo", default="astar", choices=["astar", "dijkstra"],
                     help="探索アルゴリズム（既定: astar）")
     args = ap.parse_args()
@@ -272,11 +314,16 @@ def main():
         ap.error("--orig と --dest は両方指定してください")
 
     prefer_ipv4()
+    # 背景地図はグラフと同じ接頭辞で保存・参照する
+    stem = os.path.splitext(args.graphml)[0] if args.graphml else args.out
+    args.basemap = stem + "_basemap.tif"
     ox.settings.use_cache = not args.cache_off
     ox.settings.log_console = False
 
     if args.graphml:
         G = ox.load_graphml(args.graphml)
+        if args.make_basemap:
+            make_basemap(G, args.basemap, args.basemap_zoom)
         if args.orig:
             find_route(G, args)
         return
@@ -293,6 +340,8 @@ def main():
     if args.gpkg:
         ox.save_graph_geopackage(G, args.out + ".gpkg")
     plot_graph(G, args.out + ".png")
+    if not args.no_map:
+        make_basemap(G, args.basemap, args.basemap_zoom)
 
     total_km = edges["length"].sum() / 1000
     n_comp = nx.number_weakly_connected_components(G)

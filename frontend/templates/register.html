@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}新規登録｜ひたふら{% endblock %}
+{% block content %}
+<main class="screen">
+  <a href="/login" class="back-link">← ログインに戻る</a>
+  <h2 class="screen-title">新規登録</h2>
+  <p class="lead">氏名・フリガナ・パスワードを入力してください。登録後にIDをお知らせします。</p>
+
+  {% if errors %}
+  <div class="alert" role="alert">
+    <ul>
+      {% for e in errors %}<li>{{ e }}</li>{% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  <form method="post" action="/register" class="form">
+    <label class="field">
+      <span class="field-label">氏名</span>
+      <input type="text" name="name" value="{{ name }}" autocomplete="name"
+             maxlength="50" required placeholder="例：日立 太郎">
+    </label>
+    <label class="field">
+      <span class="field-label">フリガナ（カタカナ）</span>
+      <input type="text" name="kana" value="{{ kana }}" maxlength="100" required
+             placeholder="例：ヒタチ タロウ">
+    </label>
+    <label class="field">
+      <span class="field-label">パスワード</span>
+      <input type="password" name="password" autocomplete="new-password"
+             pattern="[A-Za-z0-9]{2,64}" required>
+      <span class="field-hint">{{ password_rule }}</span>
+    </label>
+    <label class="field">
+      <span class="field-label">パスワード（確認）</span>
+      <input type="password" name="password_confirm" autocomplete="new-password" required>
+    </label>
+    <button type="submit" class="button button-primary">登録する</button>
+  </form>
+</main>
+{% endblock %}

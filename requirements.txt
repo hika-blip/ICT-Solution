@@ -2,3 +2,4 @@ osmnx
 networkx
 fastapi
 uvicorn
+contextily

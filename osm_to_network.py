@@ -23,10 +23,10 @@
   <out>.gpkg          GIS用 GeoPackage（--gpkg 指定時）
   <out>.png           地図の可視化
   <out>_route.csv     最短経路のノード列（--orig/--dest 指定時）
-  <out>_route.png     最短経路の可視化（--orig/--dest 指定時）
+  <out>_route.png     地図画像(OSMタイル)上に経路を重ねた図（--orig/--dest 指定時）
 
 必要ライブラリ:
-  pip install osmnx matplotlib
+  pip install osmnx matplotlib contextily
   ※ 実行時に OpenStreetMap の Overpass API / Nominatim へインターネット接続が必要です。
 """
 import argparse
@@ -130,6 +130,37 @@ def shortest_path(G, source, target, weight="length", algo="astar"):
     return None, math.inf
 
 
+def plot_route_on_map(G, path, orig, dest, out_path):
+    """OSM のタイル地図の上に経路を描画して保存する。
+
+    タイルの取得にインターネット接続が必要。取得できない場合は
+    地図なし（線のみ）の図にフォールバックする。
+    """
+    nodes = ox.graph_to_gdfs(G, edges=False).to_crs(epsg=3857)
+    xs = [nodes.geometry[n].x for n in path]
+    ys = [nodes.geometry[n].y for n in path]
+
+    fig, ax = plt.subplots(figsize=(10, 10))
+    ax.plot(xs, ys, color="tab:red", linewidth=4, solid_capstyle="round", zorder=3)
+    ax.scatter(xs[0], ys[0], c="tab:green", s=120, edgecolors="white", zorder=4, label="Start")
+    ax.scatter(xs[-1], ys[-1], c="tab:blue", s=120, edgecolors="white", zorder=4, label="Goal")
+    pad = max(max(xs) - min(xs), max(ys) - min(ys)) * 0.15 + 100
+    ax.set_xlim(min(xs) - pad, max(xs) + pad)
+    ax.set_ylim(min(ys) - pad, max(ys) + pad)
+    ax.set_aspect("equal")
+    ax.set_axis_off()
+    try:
+        import contextily as cx
+        # OSM のタイル利用ポリシーにより、アプリを識別できる User-Agent が必須
+        cx.add_basemap(ax, source=cx.providers.OpenStreetMap.Mapnik, crs="EPSG:3857",
+                       headers={"User-Agent": "ICT-Solution-route-viewer/0.1 (student project)"})
+    except Exception as e:
+        print(f"  地図タイルを取得できませんでした（線のみで出力）: {type(e).__name__}: {e}")
+    ax.legend(loc="upper right")
+    fig.savefig(out_path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+
 def find_route(G, args):
     """--orig/--dest 間の最短経路を求めて表示・保存する。"""
     if args.weight == "travel_time":
@@ -149,12 +180,7 @@ def find_route(G, args):
         for i, n in enumerate(path):
             w.writerow([i, n, G.nodes[n]["y"], G.nodes[n]["x"]])
     if len(path) > 1:
-        fig, ax = ox.plot_graph_route(G, path, route_color="tab:red",
-                                      route_linewidth=3, node_size=0,
-                                      edge_color="lightgray", bgcolor="white",
-                                      show=False, close=False)
-        fig.savefig(args.out + "_route.png", dpi=150, bbox_inches="tight")
-        plt.close(fig)
+        plot_route_on_map(G, path, orig, dest, args.out + "_route.png")
 
     print(f"最短経路 ({args.algo}, weight={args.weight}): {orig} → {dest}")
     print(f"  経由ノード数: {len(path)}  距離: {length:.0f} m"

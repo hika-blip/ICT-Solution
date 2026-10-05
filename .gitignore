@@ -218,3 +218,16 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# 地図データ・キャッシュ（大きいので共有しない）
+data/
+cache/
+*.pbf
+*.graphml
+
+# 秘密情報
+.env
+
+# 仮想環境
+venv/
+.venv/

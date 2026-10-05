@@ -1,0 +1,196 @@
+/* ===== 基本設定 ===== */
+:root {
+  --blue: #2E6BB0;
+  --blue-dark: #1F4F86;
+  --blue-light: #EAF2FB;
+  --text: #1A1A1A;
+  --muted: #5B6573;
+  --border: #C9D2DD;
+  --danger: #B3261E;
+  --danger-bg: #FDECEC;
+  --warn-bg: #FFF6DB;
+  --warn-border: #E8C547;
+  --page-bg: #E9EEF4;
+  --radius: 12px;
+}
+
+* { box-sizing: border-box; }
+
+html { font-size: 17px; }
+
+body {
+  margin: 0;
+  background: var(--page-bg);
+  color: var(--text);
+  font-family: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP",
+               "Yu Gothic UI", "Meiryo", sans-serif;
+  line-height: 1.6;
+}
+
+/* スマホでは全画面、PCでは中央に縦長で表示 */
+.app {
+  width: 100%;
+  max-width: 430px;
+  min-height: 100vh;
+  min-height: 100dvh;
+  margin: 0 auto;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+}
+
+@media (min-width: 600px) {
+  body { padding: 24px 0; }
+  .app {
+    min-height: calc(100vh - 48px);
+    border-radius: 24px;
+    box-shadow: 0 8px 32px rgba(20, 40, 70, 0.15);
+    overflow: hidden;
+  }
+}
+
+.screen {
+  flex: 1;
+  padding: 32px 24px 40px;
+}
+
+/* ===== 見出し ===== */
+.brand { text-align: center; margin: 24px 0 32px; }
+.brand-name {
+  margin: 0;
+  font-size: 2.4rem;
+  color: var(--blue);
+  letter-spacing: 0.08em;
+}
+.brand-tagline { margin: 4px 0 0; font-size: 0.85rem; color: var(--muted); }
+
+.screen-title { margin: 0 0 16px; font-size: 1.4rem; }
+.lead { margin: -4px 0 20px; color: var(--muted); font-size: 0.95rem; }
+
+.back-link {
+  display: inline-block;
+  margin-bottom: 16px;
+  color: var(--blue);
+  text-decoration: none;
+  font-size: 0.95rem;
+}
+
+/* ===== フォーム ===== */
+.form { display: flex; flex-direction: column; gap: 18px; }
+
+.field { display: flex; flex-direction: column; gap: 6px; }
+.field-label { font-weight: 700; font-size: 0.95rem; }
+.field-hint { font-size: 0.85rem; color: var(--muted); }
+
+.field input {
+  width: 100%;
+  height: 52px;
+  padding: 0 14px;
+  font-size: 1.1rem;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius);
+  background: #fff;
+}
+.field input:focus {
+  outline: none;
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px rgba(46, 107, 176, 0.2);
+}
+
+/* ===== ボタン ===== */
+.button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 56px;
+  margin-top: 6px;
+  font-size: 1.1rem;
+  font-weight: 700;
+  border-radius: var(--radius);
+  border: 2px solid var(--blue);
+  text-decoration: none;
+  cursor: pointer;
+  font-family: inherit;
+}
+.button-primary { background: var(--blue); color: #fff; }
+.button-primary:hover { background: var(--blue-dark); border-color: var(--blue-dark); }
+.button-secondary { background: #fff; color: var(--blue); }
+.button-secondary:hover { background: var(--blue-light); }
+
+.divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 32px 0 12px;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+.divider::before, .divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+/* ===== メッセージ ===== */
+.alert {
+  margin: 0 0 18px;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  background: var(--danger-bg);
+  color: var(--danger);
+  font-size: 0.95rem;
+}
+.alert ul { margin: 0; padding-left: 1.2em; }
+
+.notice {
+  margin: 20px 0 24px;
+  padding: 14px 16px;
+  border-radius: var(--radius);
+  background: var(--warn-bg);
+  border: 1.5px solid var(--warn-border);
+  font-size: 0.95rem;
+}
+.notice p { margin: 0; }
+.notice-title { font-weight: 700; margin-bottom: 4px !important; }
+
+/* ===== 登録完了：ID表示 ===== */
+.id-card {
+  text-align: center;
+  padding: 24px 16px;
+  border-radius: 16px;
+  background: var(--blue-light);
+  border: 2px solid var(--blue);
+}
+.id-card-label { margin: 0; font-weight: 700; color: var(--blue-dark); }
+.id-card-number {
+  margin: 4px 0 0;
+  font-size: 3rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: var(--blue);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ===== ホーム（ログイン後） ===== */
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  background: var(--blue);
+  color: #fff;
+}
+.topbar form { margin: 0; }
+.topbar-name { font-weight: 700; font-size: 1.15rem; letter-spacing: 0.06em; }
+.topbar-logout {
+  padding: 6px 14px;
+  font-size: 0.9rem;
+  font-family: inherit;
+  color: var(--blue);
+  background: #fff;
+  border: none;
+  border-radius: 999px;
+  cursor: pointer;
+}

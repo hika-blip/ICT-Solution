@@ -15,6 +15,8 @@
   python osm_to_network.py --point 36.397,140.531 --dist 1500       --orig 36.392,140.525 --dest 36.402,140.538
   # 保存済みの graphml を再利用（再ダウンロードしない）
   python osm_to_network.py --graphml osm_network.graphml       --orig 36.392,140.525 --dest 36.402,140.538 --weight travel_time --algo dijkstra
+  # 背景地図を使わず線だけで出力（タイル取得を省略。ネットが不安定なときも高速）
+  python osm_to_network.py --graphml osm_network.graphml --orig ... --dest ... --no-map
 
 出力（--out で指定した接頭辞。既定は osm_network）:
   <out>.graphml       グラフ（QGIS/Gephi/networkx で読み込み可）
@@ -34,6 +36,7 @@ import csv
 import heapq
 import itertools
 import math
+import socket
 import sys
 
 import matplotlib
@@ -55,6 +58,22 @@ def fetch_graph(args):
     west, south, east, north = (float(v) for v in args.bbox.split(","))
     # osmnx 2.x は bbox=(left, bottom, right, top)
     return ox.graph_from_bbox((west, south, east, north), **kw)
+
+
+def prefer_ipv4():
+    """名前解決の結果を IPv4 に限定する。
+
+    IPv6 が使えない環境では、IPv6 での接続試行がタイムアウトするまで
+    待たされる（応答が途切れたまま止まることもある）ため、避ける。
+    """
+    orig = socket.getaddrinfo
+
+    def getaddrinfo(host, port, family=0, *a, **kw):
+        res = orig(host, port, family, *a, **kw)
+        v4 = [r for r in res if r[0] == socket.AF_INET]
+        return v4 or res
+
+    socket.getaddrinfo = getaddrinfo
 
 
 EARTH_RADIUS_M = 6_371_009
@@ -130,7 +149,7 @@ def shortest_path(G, source, target, weight="length", algo="astar"):
     return None, math.inf
 
 
-def plot_route_on_map(G, path, orig, dest, out_path):
+def plot_route_on_map(G, path, orig, dest, out_path, use_map=True):
     """OSM のタイル地図の上に経路を描画して保存する。
 
     タイルの取得にインターネット接続が必要。取得できない場合は
@@ -149,13 +168,24 @@ def plot_route_on_map(G, path, orig, dest, out_path):
     ax.set_ylim(min(ys) - pad, max(ys) + pad)
     ax.set_aspect("equal")
     ax.set_axis_off()
-    try:
-        import contextily as cx
-        # OSM のタイル利用ポリシーにより、アプリを識別できる User-Agent が必須
-        cx.add_basemap(ax, source=cx.providers.OpenStreetMap.Mapnik, crs="EPSG:3857",
-                       headers={"User-Agent": "ICT-Solution-route-viewer/0.1 (student project)"})
-    except Exception as e:
-        print(f"  地図タイルを取得できませんでした（線のみで出力）: {type(e).__name__}: {e}")
+    if use_map:
+        try:
+            import contextily as cx
+            src = cx.providers.OpenStreetMap.Mapnik
+            # OSM のタイル利用ポリシーにより、アプリを識別できる User-Agent が必須。
+            # timeout=(接続, 読み込み)[秒]: 応答が止まっても無限に待たない。
+            west, east = ax.get_xlim()
+            south, north = ax.get_ylim()
+            img, ext = cx.bounds2img(
+                west, south, east, north, source=src, ll=False, timeout=(5, 15),
+                headers={"User-Agent": "ICT-Solution-route-viewer/0.1 (student project)"})
+            ax.imshow(img, extent=ext, zorder=1, interpolation="bilinear")
+            ax.set_xlim(west, east)
+            ax.set_ylim(south, north)
+            ax.text(0.01, 0.01, "(C) OpenStreetMap contributors", transform=ax.transAxes,
+                    fontsize=8, bbox=dict(facecolor="white", alpha=0.7, lw=0), zorder=5)
+        except Exception as e:
+            print(f"  地図タイルを取得できませんでした（線のみで出力）: {type(e).__name__}: {e}")
     ax.legend(loc="upper right")
     fig.savefig(out_path, dpi=150, bbox_inches="tight")
     plt.close(fig)
@@ -180,7 +210,8 @@ def find_route(G, args):
         for i, n in enumerate(path):
             w.writerow([i, n, G.nodes[n]["y"], G.nodes[n]["x"]])
     if len(path) > 1:
-        plot_route_on_map(G, path, orig, dest, args.out + "_route.png")
+        plot_route_on_map(G, path, orig, dest, args.out + "_route.png",
+                          use_map=not args.no_map)
 
     print(f"最短経路 ({args.algo}, weight={args.weight}): {orig} → {dest}")
     print(f"  経由ノード数: {len(path)}  距離: {length:.0f} m"
@@ -232,12 +263,15 @@ def main():
     ap.add_argument("--dest", help="経路探索の目的地 '緯度,経度'（最寄りノードに吸着）")
     ap.add_argument("--weight", default="length", choices=["length", "travel_time"],
                     help="最短化する量: 距離[m] / 所要時間[s]（既定: length）")
+    ap.add_argument("--no-map", action="store_true",
+                    help="経路図に背景地図を使わない（タイル取得を省略して高速化）")
     ap.add_argument("--algo", default="astar", choices=["astar", "dijkstra"],
                     help="探索アルゴリズム（既定: astar）")
     args = ap.parse_args()
     if bool(args.orig) != bool(args.dest):
         ap.error("--orig と --dest は両方指定してください")
 
+    prefer_ipv4()
     ox.settings.use_cache = not args.cache_off
     ox.settings.log_console = False
 

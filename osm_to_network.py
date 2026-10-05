@@ -154,7 +154,7 @@ def shortest_path(G, source, target, weight="length", algo="astar"):
 
 
 TILE_HEADERS = {"User-Agent": "ICT-Solution-route-viewer/0.1 (student project)"}
-MAX_BASEMAP_TILES = 250  # OSM のタイル利用ポリシー上、一括取得は控えめにする
+MAX_BASEMAP_TILES = 500  # OSM のタイル利用ポリシー上、一括取得は控えめにする
 
 
 def make_basemap(G, path, zoom):

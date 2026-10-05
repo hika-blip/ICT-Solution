@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """OpenStreetMap から道路ネットワークを取得するプログラム (osmnx 使用)
 
+
 取得範囲の指定方法（いずれか1つ）:
   --place   地名         例: --place "Katsuta, Hitachinaka, Ibaraki, Japan"
   --point   緯度,経度    例: --point 36.397,140.531 --dist 1500   (半径 dist メートル)

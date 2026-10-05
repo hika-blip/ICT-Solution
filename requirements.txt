@@ -2,3 +2,9 @@ osmnx
 networkx
 fastapi
 uvicorn
+kivy>=2.3
+plyer
+mapview
+requests
+winrt-Windows.Devices.Geolocation; sys_platform == "win32"
+winrt-Windows.Foundation; sys_platform == "win32"

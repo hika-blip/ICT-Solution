@@ -1,3 +1,10 @@
+<<<<<<< HEAD
+osmnx
+networkx
+fastapi
+uvicorn
+contextily
+=======
 annotated-doc==0.0.5
 annotated-types==0.8.0
 anyio==4.15.1
@@ -39,3 +46,4 @@ typing_extensions==4.16.0
 tzdata==2026.5
 urllib3==2.8.0
 uvicorn==0.54.0
+>>>>>>> 1e61a47e6e88ab5851de5706f3a1665c927f06cf

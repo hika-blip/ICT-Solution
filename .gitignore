@@ -231,3 +231,6 @@ cache/
 # 仮想環境
 venv/
 .venv/
+
+# 背景地図(自動生成)
+*_basemap.tif

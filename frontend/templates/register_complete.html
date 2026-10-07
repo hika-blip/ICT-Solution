@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}登録完了｜ひたふら{% endblock %}
+{% block content %}
+<main class="screen">
+  <h2 class="screen-title">登録が完了しました</h2>
+
+  <section class="id-card" aria-label="あなたのID">
+    <p class="id-card-label">あなたのID</p>
+    <p class="id-card-number">{{ user_id }}</p>
+  </section>
+
+  <div class="notice">
+    <p class="notice-title">この画面のスクリーンショットを撮ってください</p>
+    <p>ログインにはこのIDとパスワードが必要です。IDを忘れると再発行できません。</p>
+  </div>
+
+  <a href="/login?user_id={{ user_id }}" class="button button-primary">ログインへ進む</a>
+</main>
+{% endblock %}

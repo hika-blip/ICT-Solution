@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}ログイン｜ひたふら{% endblock %}
+{% block content %}
+<main class="screen">
+  <header class="brand">
+    <h1 class="brand-name">ひたふら</h1>
+    <p class="brand-tagline">普段は安全で快適なナビ、緊急時は避難ナビ</p>
+  </header>
+
+  <h2 class="screen-title">ログイン</h2>
+
+  {% if error %}
+  <p class="alert" role="alert">{{ error }}</p>
+  {% endif %}
+
+  <form method="post" action="/login" class="form">
+    <label class="field">
+      <span class="field-label">ID（6桁の番号）</span>
+      <input type="text" name="user_id" value="{{ user_id }}" inputmode="numeric"
+             autocomplete="username" maxlength="6" required placeholder="例：100001">
+    </label>
+    <label class="field">
+      <span class="field-label">パスワード</span>
+      <input type="password" name="password" autocomplete="current-password" required>
+    </label>
+    <button type="submit" class="button button-primary">ログイン</button>
+  </form>
+
+  <div class="divider"><span>はじめての方</span></div>
+  <a href="/register" class="button button-secondary">新規登録</a>
+</main>
+{% endblock %}

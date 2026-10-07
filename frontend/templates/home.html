@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}ホーム｜ひたふら{% endblock %}
+{% block content %}
+<header class="topbar">
+  <span class="topbar-name">ひたふら</span>
+  <form method="post" action="/logout">
+    <button type="submit" class="topbar-logout">ログアウト</button>
+  </form>
+</header>
+<main class="screen screen-blank">
+  {# ログイン後のページ（今回は白紙）。ここに地図などの機能を追加していく #}
+</main>
+{% endblock %}

@@ -15,6 +15,8 @@
   python osm_to_network.py --point 36.397,140.531 --dist 1500       --orig 36.392,140.525 --dest 36.402,140.538
   # 保存済みの graphml を再利用（再ダウンロードしない）
   python osm_to_network.py --graphml osm_network.graphml       --orig 36.392,140.525 --dest 36.402,140.538 --weight travel_time --algo dijkstra
+  # 施設名での指定（Nominatim で検索。グラフ範囲外はエラー）
+  python osm_to_network.py --graphml osm_network.graphml --orig "日立駅" --dest "常陸多賀駅"
   # 背景地図(GeoTIFF)を保存。以後の経路図はこれを使い、通信しない
   python osm_to_network.py --graphml osm_network.graphml --make-basemap
   # 背景地図を使わず線だけで出力（タイル取得を省略。ネットが不安定なときも高速）
@@ -94,6 +96,30 @@ def haversine(lat1, lon1, lat2, lon2):
 def parse_latlon(text):
     lat, lon = (float(v) for v in text.split(","))
     return lat, lon
+
+
+def resolve_place(G, text):
+    """'緯度,経度' ならそのまま、それ以外は施設名・建物名として Nominatim で検索する。
+
+    グラフの範囲外の結果は採用せず、エラー終了する（探索対象エリア外の誤ヒット防止）。
+    戻り値: (緯度, 経度, 表示名)
+    """
+    try:
+        lat, lon = parse_latlon(text)
+        return lat, lon, text
+    except ValueError:
+        pass
+    ox.settings.http_user_agent = TILE_HEADERS["User-Agent"]
+    try:
+        lat, lon = ox.geocode(text)
+    except Exception as e:
+        sys.exit(f"'{text}' が見つかりません（{type(e).__name__}）。"
+                 "表記を変えるか、緯度,経度で指定してください。")
+    nodes = ox.graph_to_gdfs(G, edges=False)
+    west, south, east, north = nodes.total_bounds
+    if not (south <= lat <= north and west <= lon <= east):
+        sys.exit(f"'{text}' ({lat:.5f},{lon:.5f}) は探索範囲外です。")
+    return lat, lon, text
 
 
 def nearest_node(G, lat, lon):
@@ -233,8 +259,11 @@ def find_route(G, args):
     if args.weight == "travel_time":
         G = ox.add_edge_speeds(G)
         G = ox.add_edge_travel_times(G)
-    orig = nearest_node(G, *parse_latlon(args.orig))
-    dest = nearest_node(G, *parse_latlon(args.dest))
+    olat, olon, oname = resolve_place(G, args.orig)
+    dlat, dlon, dname = resolve_place(G, args.dest)
+    orig = nearest_node(G, olat, olon)
+    dest = nearest_node(G, dlat, dlon)
+    print(f"出発地: {oname} ({olat:.5f},{olon:.5f})\n目的地: {dname} ({dlat:.5f},{dlon:.5f})")
     path, cost = shortest_path(G, orig, dest, weight=args.weight, algo=args.algo)
     if path is None:
         print(f"経路が見つかりません: {orig} → {dest}（一方通行・非連結の可能性）")
@@ -296,8 +325,8 @@ def main():
     ap.add_argument("--gpkg", action="store_true", help="GeoPackage も出力する")
     ap.add_argument("--out", default="osm_network", help="出力ファイル名の接頭辞")
     ap.add_argument("--cache-off", action="store_true", help="osmnx のキャッシュを使わない")
-    ap.add_argument("--orig", help="経路探索の出発地 '緯度,経度'（最寄りノードに吸着）")
-    ap.add_argument("--dest", help="経路探索の目的地 '緯度,経度'（最寄りノードに吸着）")
+    ap.add_argument("--orig", help="経路探索の出発地 '緯度,経度' または施設名（最寄りノードに吸着）")
+    ap.add_argument("--dest", help="経路探索の目的地 '緯度,経度' または施設名（最寄りノードに吸着）")
     ap.add_argument("--weight", default="length", choices=["length", "travel_time"],
                     help="最短化する量: 距離[m] / 所要時間[s]（既定: length）")
     ap.add_argument("--no-map", action="store_true",

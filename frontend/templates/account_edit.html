@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}登録情報の変更｜ひたふら{% endblock %}
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', path='css/menu.css') }}">
+<main class="screen">
+  <a href="/home" class="back-link">← 変更せずにホームに戻る</a>
+  <h2 class="screen-title">登録情報の変更</h2>
+  <p class="lead">変更したい項目を書き換えて「保存する」を押してください。</p>
+
+  {% if errors %}
+  <div class="alert" role="alert">
+    <ul>
+      {% for e in errors %}<li>{{ e }}</li>{% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  <form method="post" action="/account/edit" class="form">
+    <label class="field">
+      <span class="field-label">ID（変更できません）</span>
+      <input type="text" value="{{ user.id }}" readonly class="input-readonly">
+    </label>
+    <label class="field">
+      <span class="field-label">氏名</span>
+      <input type="text" name="name" value="{{ name }}" autocomplete="name" maxlength="50" required>
+    </label>
+    <label class="field">
+      <span class="field-label">フリガナ（カタカナ）</span>
+      <input type="text" name="kana" value="{{ kana }}" maxlength="100" required>
+    </label>
+
+    <fieldset class="field-group">
+      <legend class="field-group-title">パスワードの変更</legend>
+      <p class="field-hint">変更しない場合は、空のままにしてください。</p>
+      <label class="field">
+        <span class="field-label">新しいパスワード</span>
+        <input type="password" name="new_password" autocomplete="new-password"
+               pattern="[A-Za-z0-9]{2,64}">
+        <span class="field-hint">{{ password_rule }}</span>
+      </label>
+      <label class="field">
+        <span class="field-label">新しいパスワード（確認）</span>
+        <input type="password" name="new_password_confirm" autocomplete="new-password">
+      </label>
+    </fieldset>
+
+    <button type="submit" class="button button-primary">保存する</button>
+  </form>
+</main>
+{% endblock %}

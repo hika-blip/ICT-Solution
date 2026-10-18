@@ -1,0 +1,148 @@
+/* ===== ログイン後の上部バー ===== */
+.navbar {
+  position: sticky;
+  top: 0;
+  z-index: 1100;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 56px;
+  padding: 0 12px;
+  background: var(--blue, #2E6BB0);
+  color: #fff;
+}
+.navbar-title { font-weight: 700; font-size: 1.15rem; letter-spacing: 0.06em; }
+
+.navbar-menu-button {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 5px;
+  width: 44px;
+  height: 44px;
+  padding: 0 10px;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.navbar-menu-button span {
+  display: block;
+  height: 2.5px;
+  background: #fff;
+  border-radius: 2px;
+}
+.navbar-menu-button:hover,
+.navbar-menu-button:focus-visible { background: rgba(255, 255, 255, 0.15); outline: none; }
+
+/* ===== 左から開くメニュー ===== */
+.drawer-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  background: rgba(0, 0, 0, 0.4);
+  opacity: 0;
+  transition: opacity 0.25s;
+}
+body.menu-open .drawer-overlay { opacity: 1; }
+
+.drawer {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  /* PCでは中央の縦長画面の左端にそろえる */
+  left: max(0px, calc(50% - 215px));
+  z-index: 2001;
+  width: min(300px, 80vw);
+  background: #fff;
+  box-shadow: 4px 0 24px rgba(0, 0, 0, 0.2);
+  transform: translateX(-100%);
+  visibility: hidden;
+  transition: transform 0.25s ease, visibility 0.25s;
+  display: flex;
+  flex-direction: column;
+}
+body.menu-open .drawer { transform: translateX(0); visibility: visible; }
+
+@media (min-width: 600px) {
+  .drawer { top: 24px; bottom: 24px; border-radius: 24px 0 0 24px; }
+}
+
+.drawer-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 20px 16px 16px 20px;
+  background: var(--blue-light, #EAF2FB);
+}
+.drawer-user-name { margin: 0; font-weight: 700; font-size: 1.05rem; }
+.drawer-user-id { margin: 2px 0 0; color: var(--muted, #5B6573); font-size: 0.9rem; }
+
+.drawer-close {
+  width: 40px;
+  height: 40px;
+  font-size: 1.6rem;
+  line-height: 1;
+  color: var(--muted, #5B6573);
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.drawer-close:hover { background: rgba(0, 0, 0, 0.06); }
+
+.drawer-list { list-style: none; margin: 0; padding: 8px 0; }
+.drawer-list form { margin: 0; }
+
+.drawer-item {
+  display: block;
+  width: 100%;
+  padding: 16px 20px;
+  font-size: 1.05rem;
+  font-family: inherit;
+  text-align: left;
+  color: var(--text, #1A1A1A);
+  text-decoration: none;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid #EEF1F5;
+  cursor: pointer;
+}
+.drawer-item:hover { background: var(--blue-light, #EAF2FB); }
+.drawer-item-logout { color: var(--danger, #B3261E); }
+
+/* ===== 変更完了のお知らせ ===== */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 32px;
+  z-index: 2002;
+  transform: translateX(-50%);
+  margin: 0;
+  padding: 12px 20px;
+  color: #fff;
+  background: #2E7D32;
+  border-radius: 999px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+  font-size: 0.95rem;
+  white-space: nowrap;
+  transition: opacity 0.4s;
+}
+.toast-hide { opacity: 0; pointer-events: none; }
+
+/* ===== 登録情報の変更画面 ===== */
+.input-readonly {
+  background: #F2F4F7 !important;
+  color: var(--muted, #5B6573);
+}
+.field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin: 6px 0 0;
+  padding: 16px;
+  border: 1.5px solid var(--border, #C9D2DD);
+  border-radius: var(--radius, 12px);
+}
+.field-group-title { padding: 0 6px; font-weight: 700; }
+.field-group > .field-hint { margin: -6px 0 0; }

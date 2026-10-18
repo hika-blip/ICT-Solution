@@ -10,12 +10,13 @@
   #map { flex: 1; min-height: 360px; }
   .screen-map { display: flex; flex-direction: column; padding: 0; }
 </style>
-<header class="topbar">
+<!-- <header class="topbar">
   <span class="topbar-name">ひたふら</span>
   <form method="post" action="/logout">
     <button type="submit" class="topbar-logout">ログアウト</button>
   </form>
-</header>
+</header> -->
+{% include "_menu.html" %}
 <main class="screen screen-map">
   <div class="route-panel">
     <p class="route-message" id="message">地図をタップして出発地を選んでください。</p>

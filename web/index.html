@@ -56,7 +56,9 @@ const B = graph.bounds;
 const areaBounds = [[B.south, B.west], [B.north, B.east]];
 $("note").textContent = `道路データ: OpenStreetMap（取得日 ${graph.built}）／ 歩行者用ネットワーク`;
 
-const map = L.map("map").fitBounds(areaBounds);
+// 地図の操作範囲を探索範囲の周辺に限定する（範囲外へ迷い込まない）
+const map = L.map("map", { maxBounds: L.latLngBounds(areaBounds).pad(0.15), maxBoundsViscosity: 1.0, minZoom: 12 })
+  .fitBounds(areaBounds);
 L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
   maxZoom: 19, attribution: "&copy; OpenStreetMap contributors"
 }).addTo(map);
@@ -144,6 +146,10 @@ $("clear").addEventListener("click", clearAll);
 
 // 地図クリック: 出発地未設定→出発地、設定済み→目的地にして検索。両方設定済みなら新しい出発地から。
 map.on("click", e => {
+  if (!graph.inBounds(e.latlng.lat, e.latlng.lng)) {
+    setStatus("探索範囲外です（橙色の枠の内側をクリックしてください）。", true);
+    return;
+  }
   const ll = `${e.latlng.lat.toFixed(6)},${e.latlng.lng.toFixed(6)}`;
   if (markers.orig && markers.dest) clearAll();
   if (!markers.orig) {

@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ひたふら ルート検索（静的版）</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  :root { --bg:#fff; --fg:#1d2433; --muted:#667085; --line:#d0d5dd; --accent:#2563eb; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#1b2130; --fg:#e8ecf4; --muted:#9aa4b8; --line:#3a4358; --accent:#6b9bff; }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { display: flex; flex-direction: column; background: var(--bg); color: var(--fg);
+         font: 15px/1.5 system-ui, "Hiragino Sans", "Yu Gothic UI", sans-serif; }
+  #panel { padding: 12px 16px; border-bottom: 1px solid var(--line); display: grid; gap: 8px;
+           grid-template-columns: 1fr 1fr auto; align-items: end; }
+  label { display: grid; gap: 2px; font-size: 12px; color: var(--muted); }
+  input { padding: 8px 10px; font: inherit; color: var(--fg); background: var(--bg);
+          border: 1px solid var(--line); border-radius: 6px; width: 100%; }
+  button { padding: 8px 14px; font: inherit; border: 1px solid var(--line); border-radius: 6px;
+           background: var(--bg); color: var(--fg); cursor: pointer; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  #note { grid-column: 1 / -1; font-size: 12px; color: var(--muted); }
+  #status { grid-column: 1 / -1; font-size: 13px; color: var(--muted); min-height: 1.4em; }
+  #status.err { color: #d92d20; }
+  #map { flex: 1; min-height: 0; }
+  .btns { display: flex; gap: 6px; }
+  @media (max-width: 640px) { #panel { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<form id="panel">
+  <label>出発地（施設名 または 緯度,経度）
+    <input id="orig" placeholder="例: 日立駅" autocomplete="off"></label>
+  <label>目的地（施設名 または 緯度,経度）
+    <input id="dest" placeholder="例: 茨城大学日立キャンパス" autocomplete="off"></label>
+  <div class="btns">
+    <button class="primary" type="submit">ルート検索</button>
+    <button type="button" id="clear">クリア</button>
+  </div>
+  <div id="note"></div>
+  <div id="status">地図をクリックすると 1回目=出発地、2回目=目的地 に設定して検索します。</div>
+</form>
+<div id="map"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="graph.js"></script>
+<script src="router.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const WALK_M_PER_MIN = 80;  // 徒歩 約4.8km/h
+const graph = new Router.Graph(window.GRAPH);
+const B = graph.bounds;
+const areaBounds = [[B.south, B.west], [B.north, B.east]];
+$("note").textContent = `道路データ: OpenStreetMap（取得日 ${graph.built}）／ 歩行者用ネットワーク`;
+
+const map = L.map("map").fitBounds(areaBounds);
+L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+  maxZoom: 19, attribution: "&copy; OpenStreetMap contributors"
+}).addTo(map);
+L.rectangle(areaBounds, { color: "#f59e0b", weight: 1, fill: false, dashArray: "6 4" }).addTo(map);
+
+let routeLine = null;
+const markers = { orig: null, dest: null };
+const colors = { orig: "#16a34a", dest: "#2563eb" };
+const IDLE = "地図をクリックすると 1回目=出発地、2回目=目的地 に設定して検索します。";
+
+function setStatus(msg, err = false) {
+  $("status").textContent = msg;
+  $("status").className = err ? "err" : "";
+}
+
+function setMarker(which, lat, lon, label) {
+  if (markers[which]) map.removeLayer(markers[which]);
+  markers[which] = L.circleMarker([lat, lon], {
+    radius: 9, color: "#fff", weight: 2, fillColor: colors[which], fillOpacity: 1
+  }).bindTooltip(label).addTo(map);
+}
+
+function clearAll() {
+  for (const k of ["orig", "dest"]) {
+    if (markers[k]) map.removeLayer(markers[k]);
+    markers[k] = null;
+    $(k).value = "";
+  }
+  if (routeLine) map.removeLayer(routeLine);
+  routeLine = null;
+  setStatus(IDLE);
+}
+
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+let lastGeocode = 0;
+
+/** 「緯度,経度」ならそのまま、施設名なら Nominatim で検索（探索範囲内に限定）。 */
+async function resolve(text) {
+  const m = text.match(/^\s*(-?\d+(?:\.\d+)?)\s*[,，、\s]\s*(-?\d+(?:\.\d+)?)\s*$/);
+  if (m) return { name: text, lat: +m[1], lon: +m[2] };
+  // Nominatim の利用ポリシー: 1秒に1リクエストまで
+  const wait = 1100 - (Date.now() - lastGeocode);
+  if (wait > 0) await sleep(wait);
+  lastGeocode = Date.now();
+  const q = new URLSearchParams({
+    q: text, format: "jsonv2", limit: "1", "accept-language": "ja",
+    viewbox: `${B.west},${B.north},${B.east},${B.south}`, bounded: "1"
+  });
+  const res = await fetch("https://nominatim.openstreetmap.org/search?" + q);
+  if (!res.ok) throw new Error(`施設名の検索に失敗しました（HTTP ${res.status}）。`);
+  const hits = await res.json();
+  if (!hits.length) throw new Error(`'${text}' が探索範囲内に見つかりません。表記を変えるか、緯度,経度で指定してください。`);
+  return { name: hits[0].name || text, lat: +hits[0].lat, lon: +hits[0].lon };
+}
+
+async function search() {
+  const origText = $("orig").value.trim(), destText = $("dest").value.trim();
+  if (!origText || !destText) { setStatus("出発地と目的地を入力してください。", true); return; }
+  setStatus("検索中…");
+  try {
+    const ends = [];
+    for (const text of [origText, destText]) {
+      const p = await resolve(text);
+      if (!graph.inBounds(p.lat, p.lon)) throw new Error(`'${text}' は探索範囲外です（橙色の枠の内側を指定してください）。`);
+      p.snap = graph.project(p.lat, p.lon);
+      ends.push(p);
+    }
+    const net = Router.withSnapNodes(graph, ends.map(e => e.snap));
+    const r = Router.shortestPath(net, net.ids[0], net.ids[1]);
+    if (!r) throw new Error("経路が見つかりません（道路が分断されている可能性があります）。");
+    if (routeLine) map.removeLayer(routeLine);
+    routeLine = L.polyline(r.coords, { color: "#dc2626", weight: 5, opacity: 0.9 }).addTo(map);
+    setMarker("orig", ends[0].lat, ends[0].lon, "出発: " + ends[0].name);
+    setMarker("dest", ends[1].lat, ends[1].lon, "到着: " + ends[1].name);
+    map.fitBounds(routeLine.getBounds(), { padding: [40, 40] });
+    setStatus(`距離 ${(r.length / 1000).toFixed(2)} km ／ 徒歩 約 ${(r.length / WALK_M_PER_MIN).toFixed(1)} 分`
+      + `（出発地は道路まで ${ends[0].snap.dist.toFixed(0)} m、目的地は ${ends[1].snap.dist.toFixed(0)} m）`);
+  } catch (e) {
+    setStatus(e.message, true);
+  }
+}
+
+$("panel").addEventListener("submit", e => { e.preventDefault(); search(); });
+$("clear").addEventListener("click", clearAll);
+
+// 地図クリック: 出発地未設定→出発地、設定済み→目的地にして検索。両方設定済みなら新しい出発地から。
+map.on("click", e => {
+  const ll = `${e.latlng.lat.toFixed(6)},${e.latlng.lng.toFixed(6)}`;
+  if (markers.orig && markers.dest) clearAll();
+  if (!markers.orig) {
+    $("orig").value = ll;
+    setMarker("orig", e.latlng.lat, e.latlng.lng, "出発: " + ll);
+    setStatus("出発地を設定しました。次に目的地をクリックしてください。");
+  } else {
+    $("dest").value = ll;
+    setMarker("dest", e.latlng.lat, e.latlng.lng, "到着: " + ll);
+    search();
+  }
+});
+</script>
+</body>
+</html>

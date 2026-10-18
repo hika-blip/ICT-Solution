@@ -200,6 +200,8 @@ def add_snap_nodes(G, snaps):
     by_edge = {}
     for sid, u, v, key, r, (la, lo) in snaps:
         G.add_node(sid, y=la, x=lo)
+        if u > v:  # 往復の別エッジ (u,v)/(v,u) に射影された点も同じ道路として連結する
+            u, v, r = v, u, 1 - r
         by_edge.setdefault((u, v), []).append((r, sid))
     for (u, v), pts in by_edge.items():
         pts.sort()

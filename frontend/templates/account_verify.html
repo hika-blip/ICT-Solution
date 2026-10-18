@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}本人確認｜ひたふら{% endblock %}
+{% block content %}
+<link rel="stylesheet" href="{{ url_for('static', path='css/menu.css') }}">
+<main class="screen">
+  <a href="/home" class="back-link">← ホームに戻る</a>
+  <h2 class="screen-title">登録情報の変更</h2>
+  <p class="lead">本人確認のため、現在のパスワードを入力してください。</p>
+
+  {% if error %}
+  <p class="alert" role="alert">{{ error }}</p>
+  {% endif %}
+
+  <form method="post" action="/account" class="form">
+    <label class="field">
+      <span class="field-label">ID</span>
+      <input type="text" name="user_id" value="{{ user.id }}" readonly
+             autocomplete="username" class="input-readonly">
+    </label>
+    <label class="field">
+      <span class="field-label">現在のパスワード</span>
+      <input type="password" name="password" autocomplete="current-password" required autofocus>
+    </label>
+    <button type="submit" class="button button-primary">次へ</button>
+  </form>
+</main>
+{% endblock %}

@@ -1,0 +1,73 @@
+{#
+  ログイン後の画面の上部バーと、左から開くメニュー。
+  使い方: ページの先頭で {% include "_menu.html" %} と書く（user を渡しているページで使う）
+#}
+<link rel="stylesheet" href="{{ url_for('static', path='css/menu.css') }}">
+
+<header class="navbar">
+  <button type="button" class="navbar-menu-button" id="menu-open"
+          aria-label="メニューを開く" aria-controls="side-menu" aria-expanded="false">
+    <span></span><span></span><span></span>
+  </button>
+  <span class="navbar-title">ひたふら</span>
+</header>
+
+<div class="drawer-overlay" id="menu-overlay" hidden></div>
+
+<nav class="drawer" id="side-menu" aria-label="メニュー" aria-hidden="true">
+  <div class="drawer-head">
+    <div>
+      <p class="drawer-user-name">{{ user.name }} さん</p>
+      <p class="drawer-user-id">ID：{{ user.id }}</p>
+    </div>
+    <button type="button" class="drawer-close" id="menu-close" aria-label="メニューを閉じる">×</button>
+  </div>
+  <ul class="drawer-list">
+    <li><a href="/account" class="drawer-item">登録情報の変更</a></li>
+    <li>
+      <form method="post" action="/logout">
+        <button type="submit" class="drawer-item drawer-item-logout">ログアウト</button>
+      </form>
+    </li>
+  </ul>
+</nav>
+
+{% if request.query_params.get('updated') == '1' %}
+<p class="toast" id="toast" role="status">登録情報を変更しました</p>
+{% endif %}
+
+<script>
+(() => {
+  const drawer = document.getElementById("side-menu");
+  const overlay = document.getElementById("menu-overlay");
+  const openBtn = document.getElementById("menu-open");
+  const closeBtn = document.getElementById("menu-close");
+
+  const open = () => {
+    overlay.hidden = false;
+    requestAnimationFrame(() => {
+      document.body.classList.add("menu-open");
+    });
+    drawer.setAttribute("aria-hidden", "false");
+    openBtn.setAttribute("aria-expanded", "true");
+  };
+  const close = () => {
+    document.body.classList.remove("menu-open");
+    drawer.setAttribute("aria-hidden", "true");
+    openBtn.setAttribute("aria-expanded", "false");
+    setTimeout(() => { overlay.hidden = true; }, 250);
+  };
+
+  openBtn.addEventListener("click", open);
+  closeBtn.addEventListener("click", close);
+  overlay.addEventListener("click", close);
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") close(); });
+
+  // 「変更しました」を数秒で消し、URLの ?updated=1 も消す
+  const toast = document.getElementById("toast");
+  if (toast) {
+    history.replaceState(null, "", location.pathname);
+    setTimeout(() => toast.classList.add("toast-hide"), 3000);
+  }
+})();
+</script>

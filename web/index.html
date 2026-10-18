@@ -1,5 +1,9 @@
 <!doctype html>
 <!--
+  登録地点: web/places.csv に名称・別名・座標（任意で入口の座標）を書くと、施設名検索で優先して使われる。
+  列: 名称,読み,別名(;区切り),緯度,経度,入口緯度,入口経度,種別,備考   ※CSVを読み込むためサーバ経由で開くこと
+  ※Excel で保存すると電話番号や「24/7」が自動変換されることがある。メモ帳等での編集を推奨。
+
   サーバ経由で起動する（OSM公式タイルは file:// だと Referer が付かずブロックされるため）:
     cd web
     python -m http.server 8000
@@ -32,6 +36,13 @@
   #note { grid-column: 1 / -1; font-size: 12px; color: var(--muted); }
   #status { grid-column: 1 / -1; font-size: 13px; color: var(--muted); min-height: 1.4em; }
   #status.err { color: #d92d20; }
+  #cands { grid-column: 1 / -1; display: none; }
+  #cands.show { display: block; }
+  #cands h2 { margin: 0 0 4px; font-size: 13px; }
+  #cands ol { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; max-height: 30vh; overflow: auto; }
+  #cands button { width: 100%; text-align: left; display: grid; gap: 0; padding: 6px 10px; }
+  #cands .sub { font-size: 12px; color: var(--muted); }
+  #cands .no { display: inline-block; min-width: 1.4em; margin-right: 4px; font-weight: 700; color: var(--accent); }
   #map { flex: 1; min-height: 0; }
   .btns { display: flex; gap: 6px; }
   @media (max-width: 640px) { #panel { grid-template-columns: 1fr; } }
@@ -49,6 +60,7 @@
   </div>
   <div id="note"></div>
   <div id="status">出発地または目的地の入力欄を選んでから地図をタップすると、その座標が入力されます。</div>
+  <div id="cands"><h2></h2><ol></ol></div>
 </form>
 <div id="map"></div>
 
@@ -96,39 +108,168 @@ function clearAll() {
   }
   if (routeLine) map.removeLayer(routeLine);
   routeLine = null;
+  hideCandidates();
+  chosen.orig = chosen.dest = null;
   setStatus(IDLE);
 }
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 let lastGeocode = 0;
+const hitCache = new Map();               // 検索語 -> 候補の配列（同じ語を再検索しない）
+const chosen = { orig: null, dest: null }; // 候補から選んだ結果 {text, place}
+const candLayer = L.layerGroup().addTo(map);
+const LABEL = { orig: "出発地", dest: "目的地" };
 
-/** 「緯度,経度」ならそのまま、施設名なら Nominatim で検索（探索範囲内に限定）。 */
-async function resolve(text) {
-  const m = text.match(/^\s*(-?\d+(?:\.\d+)?)\s*[,，、\s]\s*(-?\d+(?:\.\d+)?)\s*$/);
-  if (m) return { name: text, lat: +m[1], lon: +m[2] };
+// ---- 登録地点 (places.csv) ----
+/** CSV 文字列を行×列の配列にする（引用符・引用符内のカンマ/改行・BOM・CRLF に対応）。 */
+function parseCsv(text) {
+  const rows = [];
+  let row = [], cell = "", q = false;
+  text = text.replace(/^\uFEFF/, "");
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (q) {
+      if (c === '"' && text[i + 1] === '"') { cell += '"'; i++; }
+      else if (c === '"') q = false;
+      else cell += c;
+    } else if (c === '"') q = true;
+    else if (c === ",") { row.push(cell); cell = ""; }
+    else if (c === "\n" || c === "\r") {
+      if (c === "\r" && text[i + 1] === "\n") i++;
+      row.push(cell); cell = "";
+      if (row.some(v => v !== "")) rows.push(row);
+      row = [];
+    } else cell += c;
+  }
+  row.push(cell);
+  if (row.some(v => v !== "")) rows.push(row);
+  return rows;
+}
+
+/** 検索用に正規化: 全角半角・大文字小文字・空白・カタカナ/ひらがなの違いをならす。 */
+const norm = t => t.normalize("NFKC").toLowerCase().replace(/\s+/g, "")
+  .replace(/[\u30a1-\u30f6]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0x60));
+
+let places = [];
+const placesReady = fetch("places.csv").then(r => { if (!r.ok) throw new Error(r.status); return r.text(); })
+  .then(t => {
+    const [head, ...body] = parseCsv(t);
+    places = body.map(r => Object.fromEntries(head.map((h, i) => [h.trim(), (r[i] || "").trim()])))
+      .filter(p => p["名称"] && isFinite(parseFloat(p["緯度"])) && isFinite(parseFloat(p["経度"])))
+      .map(p => {
+        const ent = isFinite(parseFloat(p["入口緯度"])) && isFinite(parseFloat(p["入口経度"]));
+        return {
+          name: p["名称"], keys: [p["名称"], p["読み"], ...p["別名"].split(/[;；]/)].filter(Boolean).map(norm),
+          detail: ["登録地点", p["種別"], ent ? "入口の座標あり" : "", p["備考"]].filter(Boolean).join(" / "),
+          // 入口の座標があれば、経路の発着点にはそちらを使う
+          lat: ent ? parseFloat(p["入口緯度"]) : parseFloat(p["緯度"]),
+          lon: ent ? parseFloat(p["入口経度"]) : parseFloat(p["経度"]),
+        };
+      });
+    $("note").textContent += ` ／ 登録地点 ${places.length} 件`;
+  })
+  .catch(() => { $("note").textContent += " ／ 登録地点(places.csv)は読み込めませんでした（サーバ経由で開いてください）"; });
+
+/** 登録地点から検索する。名称・読み・別名の完全一致があればそれだけ、なければ部分一致を返す。 */
+function searchPlaces(text) {
+  const k = norm(text);
+  if (!k) return [];
+  const exact = places.filter(p => p.keys.includes(k));
+  return exact.length ? exact : places.filter(p => p.keys.some(x => x.includes(k)));
+}
+
+/** Nominatim で施設名を検索し、探索範囲内の候補（最大5件）を返す。 */
+async function geocode(text) {
+  if (hitCache.has(text)) return hitCache.get(text);
   // Nominatim の利用ポリシー: 1秒に1リクエストまで
   const wait = 1100 - (Date.now() - lastGeocode);
   if (wait > 0) await sleep(wait);
   lastGeocode = Date.now();
   const q = new URLSearchParams({
-    q: text, format: "jsonv2", limit: "1", "accept-language": "ja",
+    q: text, format: "jsonv2", limit: "5", "accept-language": "ja",
     viewbox: `${B.west},${B.north},${B.east},${B.south}`, bounded: "1"
   });
   const res = await fetch("https://nominatim.openstreetmap.org/search?" + q);
   if (!res.ok) throw new Error(`施設名の検索に失敗しました（HTTP ${res.status}）。`);
-  const hits = await res.json();
+  const seen = new Set();
+  const hits = (await res.json()).filter(h => h.name && !seen.has(h.osm_type + h.osm_id) && seen.add(h.osm_type + h.osm_id))
+    .map(h => {
+      const parts = h.display_name.split(/,\s*/);
+      return { name: h.name, detail: parts.slice(1).join(" / "),
+               lat: +h.lat, lon: +h.lon };
+    });
+  hitCache.set(text, hits);
+  return hits;
+}
+
+function hideCandidates() {
+  $("cands").classList.remove("show");
+  candLayer.clearLayers();
+}
+
+/** 候補を一覧と地図上の番号付きマーカーで示し、選ばれたら onPick を呼ぶ。 */
+function showCandidates(which, text, hits, onPick) {
+  hideCandidates();
+  $("cands").querySelector("h2").textContent =
+    `${LABEL[which]}「${text}」に当てはまる場所が ${hits.length} 件あります。選んでください。`;
+  const ol = $("cands").querySelector("ol");
+  ol.textContent = "";
+  hits.forEach((h, i) => {
+    const pick = () => { hideCandidates(); onPick(h); };
+    const li = document.createElement("li"), btn = document.createElement("button");
+    btn.type = "button";
+    const title = document.createElement("span");
+    const no = document.createElement("span");
+    no.className = "no"; no.textContent = i + 1;
+    title.append(no, h.name);
+    const sub = document.createElement("span");
+    sub.className = "sub"; sub.textContent = h.detail;
+    btn.append(title, sub);
+    btn.addEventListener("click", pick);
+    btn.addEventListener("mouseenter", () => map.panTo([h.lat, h.lon]));
+    li.append(btn); ol.append(li);
+    L.marker([h.lat, h.lon], {
+      icon: L.divIcon({ className: "", iconSize: [26, 26], iconAnchor: [13, 13],
+        html: `<div style="width:26px;height:26px;border-radius:50%;background:#f59e0b;color:#fff;`
+            + `font:700 14px/26px system-ui;text-align:center;border:2px solid #fff;`
+            + `box-shadow:0 1px 4px rgba(0,0,0,.4)">${i + 1}</div>` })
+    }).bindTooltip(h.name).on("click", pick).addTo(candLayer);
+  });
+  $("cands").classList.add("show");
+  map.fitBounds(L.latLngBounds(hits.map(h => [h.lat, h.lon])), { padding: [60, 60], maxZoom: 16 });
+}
+
+/**
+ * 入力欄の内容を場所に変換する。「緯度,経度」はそのまま、施設名は検索する。
+ * 候補が複数あれば一覧を出して null を返す（選択後に search() が呼び直される）。
+ */
+async function resolve(which, text) {
+  const m = text.match(/^\s*(-?\d+(?:\.\d+)?)\s*[,，、\s]\s*(-?\d+(?:\.\d+)?)\s*$/);
+  if (m) return { name: text, lat: +m[1], lon: +m[2] };
+  if (chosen[which] && chosen[which].text === text) return chosen[which].place;
+  await placesReady;
+  const reg = searchPlaces(text);
+  const hits = reg.length ? reg : await geocode(text);  // 登録地点があればそちらを優先（通信もしない）
   if (!hits.length) throw new Error(`'${text}' が探索範囲内に見つかりません。表記を変えるか、緯度,経度で指定してください。`);
-  return { name: hits[0].name || text, lat: +hits[0].lat, lon: +hits[0].lon };
+  if (hits.length === 1) return hits[0];
+  showCandidates(which, text, hits, place => {
+    chosen[which] = { text, place };
+    search();
+  });
+  setStatus(`${LABEL[which]}の候補が ${hits.length} 件見つかりました。一覧または地図の番号から選んでください。`);
+  return null;
 }
 
 async function search() {
   const origText = $("orig").value.trim(), destText = $("dest").value.trim();
   if (!origText || !destText) { setStatus("出発地と目的地を入力してください。", true); return; }
+  hideCandidates();
   setStatus("検索中…");
   try {
     const ends = [];
-    for (const text of [origText, destText]) {
-      const p = await resolve(text);
+    for (const [which, text] of [["orig", origText], ["dest", destText]]) {
+      const p = await resolve(which, text);
+      if (!p) return;  // 候補の選択待ち
       if (!graph.inBounds(p.lat, p.lon)) throw new Error(`'${text}' は探索範囲外です（橙色の枠の内側を指定してください）。`);
       p.snap = graph.project(p.lat, p.lon);
       ends.push(p);

@@ -25,6 +25,7 @@
   label { display: grid; gap: 2px; font-size: 12px; color: var(--muted); }
   input { padding: 8px 10px; font: inherit; color: var(--fg); background: var(--bg);
           border: 1px solid var(--line); border-radius: 6px; width: 100%; }
+  input.picking { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent); }
   button { padding: 8px 14px; font: inherit; border: 1px solid var(--line); border-radius: 6px;
            background: var(--bg); color: var(--fg); cursor: pointer; }
   button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
@@ -47,7 +48,7 @@
     <button type="button" id="clear">クリア</button>
   </div>
   <div id="note"></div>
-  <div id="status">地図をクリックすると 1回目=出発地、2回目=目的地 に設定して検索します。</div>
+  <div id="status">出発地または目的地の入力欄を選んでから地図をタップすると、その座標が入力されます。</div>
 </form>
 <div id="map"></div>
 
@@ -73,7 +74,7 @@ L.rectangle(areaBounds, { color: "#f59e0b", weight: 1, fill: false, dashArray: "
 let routeLine = null;
 const markers = { orig: null, dest: null };
 const colors = { orig: "#16a34a", dest: "#2563eb" };
-const IDLE = "地図をクリックすると 1回目=出発地、2回目=目的地 に設定して検索します。";
+const IDLE = "出発地または目的地の入力欄を選んでから地図をタップすると、その座標が入力されます。";
 
 function setStatus(msg, err = false) {
   $("status").textContent = msg;
@@ -150,23 +151,35 @@ async function search() {
 $("panel").addEventListener("submit", e => { e.preventDefault(); search(); });
 $("clear").addEventListener("click", clearAll);
 
-// 地図クリック: 出発地未設定→出発地、設定済み→目的地にして検索。両方設定済みなら新しい出発地から。
+// 地図タップで座標を入力する欄。入力欄を選択しているときだけ有効（地図タップで入力欄の
+// フォーカスは外れるため、選択状態はフォーカスとは別に保持する）。
+let picking = null;
+function setPicking(which) {
+  picking = which;
+  for (const k of ["orig", "dest"]) $(k).classList.toggle("picking", k === which);
+  if (which) setStatus(`${which === "orig" ? "出発地" : "目的地"}の位置を地図でタップしてください。`);
+}
+for (const k of ["orig", "dest"]) $(k).addEventListener("focus", () => setPicking(k));
+// 入力欄・地図以外（ボタンなど）を操作したら選択を解除する
+document.addEventListener("pointerdown", e => {
+  if (!e.target.closest("#map") && !e.target.closest("input")) setPicking(null);
+});
+
 map.on("click", e => {
-  if (!graph.inBounds(e.latlng.lat, e.latlng.lng)) {
-    setStatus("探索範囲外です（橙色の枠の内側をクリックしてください）。", true);
+  if (!picking) {
+    setStatus("先に出発地または目的地の入力欄を選んでください。", true);
     return;
   }
-  const ll = `${e.latlng.lat.toFixed(6)},${e.latlng.lng.toFixed(6)}`;
-  if (markers.orig && markers.dest) clearAll();
-  if (!markers.orig) {
-    $("orig").value = ll;
-    setMarker("orig", e.latlng.lat, e.latlng.lng, "出発: " + ll);
-    setStatus("出発地を設定しました。次に目的地をクリックしてください。");
-  } else {
-    $("dest").value = ll;
-    setMarker("dest", e.latlng.lat, e.latlng.lng, "到着: " + ll);
-    search();
+  if (!graph.inBounds(e.latlng.lat, e.latlng.lng)) {
+    setStatus("探索範囲外です（橙色の枠の内側をタップしてください）。", true);
+    return;
   }
+  const which = picking, ll = `${e.latlng.lat.toFixed(6)},${e.latlng.lng.toFixed(6)}`;
+  $(which).value = ll;
+  setMarker(which, e.latlng.lat, e.latlng.lng, (which === "orig" ? "出発: " : "到着: ") + ll);
+  setPicking(null);
+  if ($("orig").value.trim() && $("dest").value.trim()) search();
+  else setStatus(`${which === "orig" ? "出発地" : "目的地"}を設定しました。もう一方の入力欄を選んで地図をタップしてください。`);
 });
 </script>
 </body>

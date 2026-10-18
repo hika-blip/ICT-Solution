@@ -1,13 +1,113 @@
 {% extends "base.html" %}
 {% block title %}ホーム｜ひたふら{% endblock %}
 {% block content %}
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+  .route-panel { padding: 12px 16px; background: #fff; border-bottom: 1px solid var(--border); }
+  .route-message { margin: 0 0 8px; font-size: 0.95rem; }
+  .route-actions { display: flex; gap: 8px; }
+  .route-actions .button { height: 44px; margin-top: 0; font-size: 0.95rem; }
+  #map { flex: 1; min-height: 360px; }
+  .screen-map { display: flex; flex-direction: column; padding: 0; }
+</style>
 <header class="topbar">
   <span class="topbar-name">ひたふら</span>
   <form method="post" action="/logout">
     <button type="submit" class="topbar-logout">ログアウト</button>
   </form>
 </header>
-<main class="screen screen-blank">
-  {# ログイン後のページ（今回は白紙）。ここに地図などの機能を追加していく #}
+<main class="screen screen-map">
+  <div class="route-panel">
+    <p class="route-message" id="message">地図をタップして出発地を選んでください。</p>
+    <div class="route-actions">
+      <button type="button" class="button button-secondary" id="use-current">現在地を出発地にする</button>
+      <button type="button" class="button button-secondary" id="reset">やり直す</button>
+    </div>
+  </div>
+  <div id="map"></div>
 </main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+  // 日立市付近を初期表示にする
+  const map = L.map("map").setView([36.5995, 140.651], 14);
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 19,
+    attribution: "&copy; OpenStreetMap contributors",
+  }).addTo(map);
+
+  // 経路検索できる範囲（地図データの範囲）を枠で示して、そこへ移動する
+  fetch("/api/area").then((r) => r.ok ? r.json() : null).then((a) => {
+    if (!a) return;
+    const box = L.rectangle([[a.south, a.west], [a.north, a.east]],
+      { color: "#2E6BB0", weight: 2, fill: false, interactive: false }).addTo(map);
+    map.fitBounds(box.getBounds());
+  });
+
+  const messageEl = document.getElementById("message");
+  let orig = null, dest = null, origMarker = null, destMarker = null, routeLine = null;
+
+  function setMessage(text) { messageEl.textContent = text; }
+
+  function reset() {
+    [origMarker, destMarker, routeLine].forEach((layer) => layer && map.removeLayer(layer));
+    orig = dest = origMarker = destMarker = routeLine = null;
+    setMessage("地図をタップして出発地を選んでください。");
+  }
+
+  function setOrig(latlng) {
+    orig = latlng;
+    if (origMarker) map.removeLayer(origMarker);
+    origMarker = L.marker(latlng).addTo(map).bindTooltip("出発地", { permanent: true });
+    setMessage("次に目的地をタップしてください。");
+  }
+
+  async function searchRoute() {
+    setMessage("経路を検索しています…");
+    const params = new URLSearchParams({
+      orig_lat: orig.lat, orig_lon: orig.lng, dest_lat: dest.lat, dest_lon: dest.lng,
+    });
+    try {
+      const res = await fetch("/api/route?" + params);
+      if (res.status === 401) { location.href = "/login"; return; }
+      const data = await res.json();
+      if (!res.ok) {
+        // 目的地だけ選び直せるようにする
+        map.removeLayer(destMarker);
+        dest = destMarker = null;
+        setMessage((data.error || "経路を取得できませんでした。") + " 目的地を選び直してください。");
+        return;
+      }
+      routeLine = L.polyline(data.coords, { color: "#2E6BB0", weight: 6 }).addTo(map);
+      map.fitBounds(routeLine.getBounds(), { padding: [30, 30] });
+      setMessage("距離: 約 " + Math.round(data.distance_m) + " m");
+    } catch (e) {
+      setMessage("通信に失敗しました。");
+    }
+  }
+
+  map.on("click", (e) => {
+    if (!orig) {
+      setOrig(e.latlng);
+    } else if (!dest) {
+      dest = e.latlng;
+      destMarker = L.marker(dest).addTo(map).bindTooltip("目的地", { permanent: true });
+      searchRoute();
+    }
+  });
+
+  document.getElementById("reset").addEventListener("click", reset);
+
+  document.getElementById("use-current").addEventListener("click", () => {
+    if (!navigator.geolocation) { setMessage("この端末では現在地を取得できません。"); return; }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const latlng = L.latLng(pos.coords.latitude, pos.coords.longitude);
+        reset();
+        setOrig(latlng);
+        map.setView(latlng, 16);
+      },
+      () => setMessage("現在地を取得できませんでした。地図をタップして選んでください。"),
+    );
+  });
+</script>
 {% endblock %}

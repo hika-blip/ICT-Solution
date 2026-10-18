@@ -9,11 +9,11 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Form, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from . import auth
+from . import auth, routing
 from .db import init_db
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -28,6 +28,7 @@ COOKIE_SECURE = os.getenv("COOKIE_SECURE") == "1"
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    routing.load_graph()
     yield
 
 
@@ -138,3 +139,22 @@ def home(request: Request):
     if user is None:
         return redirect("/login")
     return templates.TemplateResponse(request, "home.html", {"user": user})
+
+
+# ---------- 経路検索API ----------
+
+@app.get("/api/route")
+def api_route(request: Request, orig_lat: float, orig_lon: float, dest_lat: float, dest_lon: float):
+    if current_user(request) is None:
+        return JSONResponse({"error": "ログインが必要です"}, status_code=401)
+    try:
+        return routing.find_route((orig_lat, orig_lon), (dest_lat, dest_lon))
+    except routing.RouteError as e:
+        return JSONResponse({"error": str(e)}, status_code=503)
+
+
+@app.get("/api/area")
+def api_area(request: Request):
+    if current_user(request) is None:
+        return JSONResponse({"error": "ログインが必要です"}, status_code=401)
+    return routing.bounds() or JSONResponse({"error": "地図データがありません"}, status_code=503)

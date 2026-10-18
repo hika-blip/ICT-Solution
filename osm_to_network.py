@@ -50,6 +50,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import networkx as nx
 import osmnx as ox
+from shapely.geometry import Point
 
 
 def fetch_graph(args):
@@ -83,6 +84,7 @@ def prefer_ipv4():
 
 
 EARTH_RADIUS_M = 6_371_009
+SNAP_WARN_M = 200  # 施設・座標から道路までの距離がこれを超えたら警告
 
 
 def haversine(lat1, lon1, lat2, lon2):
@@ -98,20 +100,31 @@ def parse_latlon(text):
     return lat, lon
 
 
-def resolve_place(G, text):
+def resolve_place(G, text, use_entrance=True):
     """'緯度,経度' ならそのまま、それ以外は施設名・建物名として Nominatim で検索する。
 
     グラフの範囲外の結果は採用せず、エラー終了する（探索対象エリア外の誤ヒット防止）。
-    戻り値: (緯度, 経度, 表示名)
+    施設の敷地内に OSM の入口(entrance)があれば、それも候補に加える。
+    戻り値: (表示名, [(緯度, 経度, 種別), ...])  先頭が代表点、以降が入口候補
     """
     try:
         lat, lon = parse_latlon(text)
-        return lat, lon, text
+        return text, [(lat, lon, "座標")]
     except ValueError:
         pass
     ox.settings.http_user_agent = TILE_HEADERS["User-Agent"]
+    geom = None
     try:
-        lat, lon = ox.geocode(text)
+        gdf = ox.geocode_to_gdf(text)  # 敷地ポリゴンが得られるのは建物・キャンパス等
+        lat, lon = float(gdf.at[gdf.index[0], "lat"]), float(gdf.at[gdf.index[0], "lon"])
+        geom = gdf.geometry.iloc[0]
+    except TypeError:  # 駅などポイントで登録された施設はポリゴンがなく TypeError になる
+        try:
+            lat, lon = ox.geocode(text)
+        except Exception as e:
+            sys.exit(f"'{text}' が見つかりません（{type(e).__name__}）。"
+                     "表記を変えるか、緯度,経度で指定してください。")
+        geom = Point(lon, lat).buffer(0.0004)  # 約 40m 圏内の入口を探す
     except Exception as e:
         sys.exit(f"'{text}' が見つかりません（{type(e).__name__}）。"
                  "表記を変えるか、緯度,経度で指定してください。")
@@ -119,7 +132,91 @@ def resolve_place(G, text):
     west, south, east, north = nodes.total_bounds
     if not (south <= lat <= north and west <= lon <= east):
         sys.exit(f"'{text}' ({lat:.5f},{lon:.5f}) は探索範囲外です。")
-    return lat, lon, text
+    cands = [(lat, lon, "代表点")]
+    if use_entrance:
+        cands += find_entrances(geom)
+    return text, cands
+
+
+def find_entrances(geom):
+    """施設ポリゴン(少し広げた範囲)内の OSM 入口(entrance タグ)を [(lat, lon, 種別)] で返す。"""
+    if geom.geom_type not in ("Polygon", "MultiPolygon"):
+        return []
+    try:
+        feats = ox.features_from_polygon(geom.buffer(0.0003), {"entrance": True})
+    except Exception:  # 該当なし(InsufficientResponseError)・通信失敗は候補なしとして扱う
+        return []
+    out = []
+    for _, row in feats.iterrows():
+        pt = row.geometry
+        if pt is not None and pt.geom_type == "Point":
+            out.append((pt.y, pt.x, f"入口({row['entrance']})"))
+    return out
+
+
+def project_to_edge(G, lat, lon):
+    """点を最寄りの道路(エッジ)上に射影する。
+
+    戻り値: (u, v, key, r, (射影点の緯度, 経度), 距離[m])。r は u からの位置の割合(0〜1)。
+    局所的な平面座標(m)で、エッジ形状(geometry、なければ u-v の直線)に射影する。
+    """
+    cos0 = math.cos(math.radians(lat))
+    k = math.pi / 180 * EARTH_RADIUS_M
+
+    def xy(la, lo):
+        return ((lo - lon) * cos0 * k, (la - lat) * k)
+
+    best = None
+    for u, v, key, d in G.edges(keys=True, data=True):
+        geom = d.get("geometry")
+        if geom is not None:
+            pts = [xy(y, x) for x, y in geom.coords]
+        else:
+            pts = [xy(G.nodes[u]["y"], G.nodes[u]["x"]), xy(G.nodes[v]["y"], G.nodes[v]["x"])]
+        along = 0.0
+        total = sum(math.dist(a, b) for a, b in zip(pts, pts[1:])) or 1e-9
+        for a, b in zip(pts, pts[1:]):
+            seg = math.dist(a, b)
+            if seg == 0:
+                continue
+            t = max(0.0, min(1.0, -(a[0] * (b[0] - a[0]) + a[1] * (b[1] - a[1])) / seg ** 2))
+            px, py = a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1])
+            dist = math.hypot(px, py)
+            if best is None or dist < best[0]:
+                best = (dist, u, v, key, (along + t * seg) / total, px, py)
+            along += seg
+    dist, u, v, key, r, px, py = best
+    return u, v, key, r, (lat + py / k, lon + px / (cos0 * k)), dist
+
+
+def add_snap_nodes(G, snaps):
+    """射影点を仮ノードとして G（コピー）に追加し、エッジを分割してつなぐ。
+
+    snaps: [(id, u, v, key, r, (lat, lon)), ...]。同じエッジ上の複数点は位置順に連結する。
+    u→v / v→u の存在する向きだけ辺を張る（一方通行を保つ）。長さ・所要時間は割合で按分。
+    端点(r が 0/1)では既存ノードをそのまま使うのが理想だが、長さ 0 の辺で足りるので統一して扱う。
+    """
+    G = G.copy()
+    by_edge = {}
+    for sid, u, v, key, r, (la, lo) in snaps:
+        G.add_node(sid, y=la, x=lo)
+        by_edge.setdefault((u, v), []).append((r, sid))
+    for (u, v), pts in by_edge.items():
+        pts.sort()
+        chain = [(0.0, u)] + pts + [(1.0, v)]
+        for fu, fv, sign in ((u, v, 1), (v, u, -1)):
+            if not G.has_edge(fu, fv):
+                continue
+            base = min(G[fu][fv].values(), key=lambda d: d["length"])
+            seq = chain if sign == 1 else [(1 - r, n) for r, n in reversed(chain)]
+            for (r0, n0), (r1, n1) in zip(seq, seq[1:]):
+                frac = r1 - r0
+                data = {k2: val for k2, val in base.items() if k2 != "geometry"}
+                data["length"] = base["length"] * frac
+                if "travel_time" in base:
+                    data["travel_time"] = base["travel_time"] * frac
+                G.add_edge(n0, n1, **data)
+    return G
 
 
 def nearest_node(G, lat, lon):
@@ -259,11 +356,19 @@ def find_route(G, args):
     if args.weight == "travel_time":
         G = ox.add_edge_speeds(G)
         G = ox.add_edge_travel_times(G)
-    olat, olon, oname = resolve_place(G, args.orig)
-    dlat, dlon, dname = resolve_place(G, args.dest)
-    orig = nearest_node(G, olat, olon)
-    dest = nearest_node(G, dlat, dlon)
-    print(f"出発地: {oname} ({olat:.5f},{olon:.5f})\n目的地: {dname} ({dlat:.5f},{dlon:.5f})")
+    names, snaps = [], []
+    for sid, text in ((-1, args.orig), (-2, args.dest)):
+        name, cands = resolve_place(G, text, use_entrance=not args.no_entrance)
+        # 各候補を道路に射影し、道路までの距離が最小のものを採用する
+        proj = [(project_to_edge(G, la, lo), kind, la, lo) for la, lo, kind in cands]
+        (u, v, key, r, pt, dist), kind, la, lo = min(proj, key=lambda p: p[0][5])
+        print(f"{'出発地' if sid == -1 else '目的地'}: {name} [{kind}] ({la:.5f},{lo:.5f})"
+              f" → 道路上の点まで {dist:.0f} m（候補 {len(cands)} 件）")
+        if dist > SNAP_WARN_M:
+            print(f"  警告: 道路まで {SNAP_WARN_M:.0f} m 以上離れています。位置を確認してください。")
+        snaps.append((sid, u, v, key, r, pt))
+    G = add_snap_nodes(G, snaps)
+    orig, dest = -1, -2
     path, cost = shortest_path(G, orig, dest, weight=args.weight, algo=args.algo)
     if path is None:
         print(f"経路が見つかりません: {orig} → {dest}（一方通行・非連結の可能性）")
@@ -325,8 +430,10 @@ def main():
     ap.add_argument("--gpkg", action="store_true", help="GeoPackage も出力する")
     ap.add_argument("--out", default="osm_network", help="出力ファイル名の接頭辞")
     ap.add_argument("--cache-off", action="store_true", help="osmnx のキャッシュを使わない")
-    ap.add_argument("--orig", help="経路探索の出発地 '緯度,経度' または施設名（最寄りノードに吸着）")
-    ap.add_argument("--dest", help="経路探索の目的地 '緯度,経度' または施設名（最寄りノードに吸着）")
+    ap.add_argument("--orig", help="経路探索の出発地 '緯度,経度' または施設名（最寄りの道路上に吸着。施設は入口を優先）")
+    ap.add_argument("--dest", help="経路探索の目的地 '緯度,経度' または施設名（最寄りの道路上に吸着。施設は入口を優先）")
+    ap.add_argument("--no-entrance", action="store_true",
+                    help="施設の入口(entrance)を探さず、代表点だけを使う")
     ap.add_argument("--weight", default="length", choices=["length", "travel_time"],
                     help="最短化する量: 距離[m] / 所要時間[s]（既定: length）")
     ap.add_argument("--no-map", action="store_true",

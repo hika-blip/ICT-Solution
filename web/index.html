@@ -151,7 +151,8 @@ const norm = t => t.normalize("NFKC").toLowerCase().replace(/\s+/g, "")
   .replace(/[\u30a1-\u30f6]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0x60));
 
 let places = [];
-const placesReady = fetch("places.csv").then(r => { if (!r.ok) throw new Error(r.status); return r.text(); })
+let placesError = "";  // 読み込みに失敗した理由（画面の案内用）
+const placesReady = fetch("places.csv", { cache: "no-store" }).then(r => { if (!r.ok) throw new Error("HTTP " + r.status); return r.text(); })
   .then(t => {
     const [head, ...body] = parseCsv(t);
     places = body.map(r => Object.fromEntries(head.map((h, i) => [h.trim(), (r[i] || "").trim()])))
@@ -168,7 +169,10 @@ const placesReady = fetch("places.csv").then(r => { if (!r.ok) throw new Error(r
       });
     $("note").textContent += ` ／ 登録地点 ${places.length} 件`;
   })
-  .catch(() => { $("note").textContent += " ／ 登録地点(places.csv)は読み込めませんでした（サーバ経由で開いてください）"; });
+  .catch(e => {
+    placesError = `${e.message}（現在のURL: ${location.href}）`;
+    $("note").textContent += " ／ 登録地点(places.csv)は読み込めませんでした: " + placesError;
+  });
 
 /** 登録地点から検索する。名称・読み・別名の完全一致があればそれだけ、なければ部分一致を返す。 */
 function searchPlaces(text) {
@@ -250,7 +254,11 @@ async function resolve(which, text) {
   await placesReady;
   const reg = searchPlaces(text);
   const hits = reg.length ? reg : await geocode(text);  // 登録地点があればそちらを優先（通信もしない）
-  if (!hits.length) throw new Error(`'${text}' が探索範囲内に見つかりません。表記を変えるか、緯度,経度で指定してください。`);
+  if (!hits.length) {
+    const hint = placesError ? `（登録地点(places.csv)が読み込めていません: ${placesError}）`
+      : !places.length ? "（登録地点(places.csv)が0件です。ファイルの内容と文字コード(UTF-8)を確認してください）" : "";
+    throw new Error(`'${text}' が探索範囲内に見つかりません。表記を変えるか、緯度,経度で指定してください。${hint}`);
+  }
   if (hits.length === 1) return hits[0];
   showCandidates(which, text, hits, place => {
     chosen[which] = { text, place };

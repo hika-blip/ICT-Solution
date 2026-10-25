@@ -1,0 +1,43 @@
+/* ===== 施設（駅・学校・観光地など）のピン ===== */
+.facility-icon span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  margin: 2px;
+  font-size: 15px;
+  font-weight: 700;
+  color: #fff;
+  background: #555;
+  border: 3px solid #fff;
+  border-radius: 8px;
+  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.45);
+}
+.facility-icon-station span { background: #1F4F86; }
+.facility-icon-school  span { background: #6A3FA0; }
+.facility-icon-tourism span { background: #C2620A; }
+.facility-icon-shelter span { background: #B3261E; }
+
+.facility-popup { font-size: 0.95rem; }
+.facility-popup p { margin: 0; }
+.facility-category { font-size: 0.8rem; color: var(--muted); }
+.facility-name { font-weight: 700; font-size: 1.05rem; margin-bottom: 2px !important; }
+.facility-desc { font-size: 0.85rem; color: var(--muted); }
+.facility-entrances { margin-top: 4px !important; font-size: 0.85rem; }
+.facility-actions { display: flex; gap: 8px; margin-top: 10px; }
+.facility-go,
+.facility-from {
+  flex: 1;
+  padding: 10px 8px;
+  font-family: inherit;
+  font-size: 0.9rem;
+  font-weight: 700;
+  border-radius: 8px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.facility-go { color: #fff; background: var(--blue); border: 2px solid var(--blue); }
+.facility-go:hover { background: var(--blue-dark); border-color: var(--blue-dark); }
+.facility-from { color: var(--blue); background: #fff; border: 2px solid var(--blue); }
+.facility-from:hover { background: var(--blue-light); }

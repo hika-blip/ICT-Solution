@@ -2,6 +2,7 @@
 {% block title %}ホーム｜ひたふら{% endblock %}
 {% block content %}
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="stylesheet" href="{{ url_for('static', path='css/facilities.css') }}">
 <style>
   .route-panel { padding: 12px 16px; background: #fff; border-bottom: 1px solid var(--border); }
   .route-message { margin: 0 0 8px; font-size: 0.95rem; }
@@ -57,64 +58,147 @@
     attribution: "&copy; OpenStreetMap contributors",
   }).addTo(map);
 
-  // 経路検索できる範囲（地図データの範囲）を枠で示して、そこへ移動する
+  // 経路検索できる範囲（地図データの範囲）を枠で示し、枠の外は表示しないようにする
+  //  - 縮小できるのは「画面が枠の中に収まる」ところまで
+  //  - ドラッグしても枠の外へは動かない
   fetch("/api/area").then((r) => r.ok ? r.json() : null).then((a) => {
     if (!a) return;
-    const box = L.rectangle([[a.south, a.west], [a.north, a.east]],
-      { color: "#2E6BB0", weight: 2, fill: false, interactive: false }).addTo(map);
-    map.fitBounds(box.getBounds());
+    const area = L.latLngBounds([[a.south, a.west], [a.north, a.east]]);
+    L.rectangle(area, { color: "#2E6BB0", weight: 2, fill: false, interactive: false }).addTo(map);
+    map.setMaxBounds(area);
+    map.options.maxBoundsViscosity = 1.0;  // 枠の端で止める（はみ出して戻る動きをなくす）
+
+    // 画面の大きさから、枠の外が見えない一番小さいズームを計算する
+    const fitMinZoom = () => {
+      map.invalidateSize();
+      map.setMinZoom(map.getBoundsZoom(area, true));
+      map.panInsideBounds(area, { animate: false });
+    };
+    fitMinZoom();
+    map.setView(area.getCenter(), map.getMinZoom());
+
+    // 画面の向きや大きさ、上のパネルの高さが変わったときも計算し直す
+    new ResizeObserver(fitMinZoom).observe(document.getElementById("map"));
   });
 
   const messageEl = document.getElementById("message");
+  // 出発地・目的地は「地図上の地点」か「施設（駅・学校など）」のどちらか。
+  // 施設のときは origFacility / destFacility に施設が入り、経路は入口の組み合わせのうち一番近いものになる
   let orig = null, dest = null, origMarker = null, destMarker = null, routeLine = null;
+  let origFacility = null;
+  let pendingFacility = null;  // 出発地より先に「ここへ行く」を押された施設
 
   function setMessage(text) { messageEl.textContent = text; }
 
   function reset() {
     [origMarker, destMarker, routeLine].forEach((layer) => layer && map.removeLayer(layer));
     orig = dest = origMarker = destMarker = routeLine = null;
+    origFacility = pendingFacility = null;
     setMessage("地図をタップして出発地を選んでください。");
   }
 
-  function setOrig(latlng) {
-    orig = latlng;
-    if (origMarker) map.removeLayer(origMarker);
-    origMarker = L.marker(latlng).addTo(map).bindTooltip("出発地", { permanent: true });
-    setMessage("次に目的地をタップしてください。");
+  function clearDestination() {
+    [destMarker, routeLine].forEach((layer) => layer && map.removeLayer(layer));
+    dest = destMarker = routeLine = null;
   }
 
-  async function searchRoute() {
+  function setOrig(latlng, facility = null) {
+    orig = latlng;
+    origFacility = facility;
+    if (origMarker) map.removeLayer(origMarker);
+    const label = facility ? `出発：${facility.name}` : "出発地";
+    origMarker = L.marker(latlng).addTo(map).bindTooltip(label, { permanent: true });
+    setMessage("次に目的地をタップするか、施設のピンを選んで「ここへ行く」を押してください。");
+    // 先に施設の「ここへ行く」が押されていたら、その施設への経路を探す
+    if (pendingFacility) {
+      const target = pendingFacility;
+      pendingFacility = null;
+      planRoute(target, null);
+    }
+  }
+
+  function placeLabel(facility, point) {
+    if (!facility) return "";
+    return point && point.name ? `${facility.name}（${point.name}）` : facility.name;
+  }
+
+  // 経路を探して表示する。目的地は destFac（施設）か destLatLng（地点）のどちらか
+  async function planRoute(destFac, destLatLng) {
+    clearDestination();
+    const params = new URLSearchParams();
+    if (origFacility) params.set("orig_facility", origFacility.id);
+    else { params.set("orig_lat", orig.lat); params.set("orig_lon", orig.lng); }
+    if (destFac) params.set("dest_facility", destFac.id);
+    else { params.set("dest_lat", destLatLng.lat); params.set("dest_lon", destLatLng.lng); }
+
+    // 地点をタップしたときは、検索中も目的地の印を出しておく
+    if (destLatLng) {
+      dest = destLatLng;
+      destMarker = L.marker(dest).addTo(map).bindTooltip("目的地", { permanent: true });
+    }
     setMessage("経路を検索しています…");
-    const params = new URLSearchParams({
-      orig_lat: orig.lat, orig_lon: orig.lng, dest_lat: dest.lat, dest_lon: dest.lng,
-    });
     try {
-      const res = await fetch("/api/route?" + params);
+      const res = await fetch("/api/route/plan?" + params);
       if (res.status === 401) { location.href = "/login"; return; }
       const data = await res.json();
       if (!res.ok) {
-        // 目的地だけ選び直せるようにする
-        map.removeLayer(destMarker);
-        dest = destMarker = null;
+        clearDestination();  // 目的地だけ選び直せるようにする
         setMessage((data.error || "経路を取得できませんでした。") + " 目的地を選び直してください。");
         return;
       }
+      // 出発地が施設なら、実際に使う出口の位置へ印を動かす
+      let startLabel = "出発地";
+      if (origFacility) {
+        startLabel = placeLabel(origFacility, data.start);
+        origMarker.setLatLng([data.start.lat, data.start.lon]).setTooltipContent(`出発：${startLabel}`);
+      }
+      let goalLabel = "目的地";
+      if (destFac) {
+        goalLabel = placeLabel(destFac, data.goal);
+        if (destMarker) map.removeLayer(destMarker);
+        dest = L.latLng(data.goal.lat, data.goal.lon);
+        destMarker = L.marker(dest).addTo(map).bindTooltip(goalLabel, { permanent: true });
+      }
       routeLine = L.polyline(data.coords, { color: "#2E6BB0", weight: 6 }).addTo(map);
       map.fitBounds(routeLine.getBounds(), { padding: [30, 30] });
-      setMessage("距離: 約 " + Math.round(data.distance_m) + " m");
+      setMessage(`${startLabel} → ${goalLabel}　約 ${Math.round(data.distance_m)} m`);
     } catch (e) {
+      clearDestination();
       setMessage("通信に失敗しました。");
     }
   }
+
+  // ---- facilities.js のポップアップのボタンから呼ばれる ----
+  // 「ここへ行く」
+  window.goToFacility = (facility) => {
+    map.closePopup();
+    if (!orig) {
+      pendingFacility = facility;
+      setMessage(`${facility.name}へ行きます。出発地を地図でタップするか、施設の「ここから出発」か「現在地を出発地にする」を押してください。`);
+      return;
+    }
+    if (origFacility && origFacility.id === facility.id) {
+      setMessage("出発地と同じ施設です。別の目的地を選んでください。");
+      return;
+    }
+    planRoute(facility, null);
+  };
+
+  // 「ここから出発」
+  window.startFromFacility = (facility) => {
+    map.closePopup();
+    const target = pendingFacility && pendingFacility.id !== facility.id ? pendingFacility : null;
+    reset();
+    pendingFacility = target;
+    setOrig(L.latLng(facility.lat, facility.lon), facility);
+  };
 
   map.on("click", (e) => {
     if (window.pinMode) return;  // ピンを立てる操作中は経路用に使わない
     if (!orig) {
       setOrig(e.latlng);
     } else if (!dest) {
-      dest = e.latlng;
-      destMarker = L.marker(dest).addTo(map).bindTooltip("目的地", { permanent: true });
-      searchRoute();
+      planRoute(null, e.latlng);
     }
   });
 
@@ -125,7 +209,9 @@
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         const latlng = L.latLng(pos.coords.latitude, pos.coords.longitude);
+        const facility = pendingFacility;  // reset で消えないように退避
         reset();
+        pendingFacility = facility;
         setOrig(latlng);
         map.setView(latlng, 16);
       },
@@ -134,4 +220,5 @@
   });
 </script>
 <script src="{{ url_for('static', path='js/pins.js') }}"></script>
+<script src="{{ url_for('static', path='js/facilities.js') }}"></script>
 {% endblock %}

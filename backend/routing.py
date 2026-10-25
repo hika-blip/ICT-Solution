@@ -61,6 +61,70 @@ def _edge_coords(u: int, v: int) -> list[list[float]]:
     return pts
 
 
+def _path_result(source: int, path: list[int]) -> dict:
+    """ノードの列から、地図に描く座標の列と距離を作る。"""
+    coords = [[_graph.nodes[source]["y"], _graph.nodes[source]["x"]]]
+    for u, v in zip(path, path[1:]):
+        coords.extend(_edge_coords(u, v)[1:])
+    return {
+        "coords": coords,
+        "distance_m": sum(osm.edge_cost(_graph, u, v, "length") for u, v in zip(path, path[1:])),
+    }
+
+
+def find_route_between(
+    starts: list[tuple[str, tuple[float, float]]],
+    goals: list[tuple[str, tuple[float, float]]],
+) -> dict:
+    """出発候補と目的候補（施設の入口など）の組み合わせのうち、道のりが一番短い経路を返す。
+
+    starts, goals: [(名前, (緯度, 経度)), ...]   ※地点1つなら名前は "" でよい
+    戻り値: {"coords": [...], "distance_m": 距離[m],
+             "start": {"name", "lat", "lon"}, "goal": {"name", "lat", "lon"}}
+    """
+    if _graph is None:
+        raise RouteError(f"地図データがありません（{GRAPH_PATH} を置いてください）")
+
+    def snap_all(points, label):
+        snapped = []
+        for name, point in points:
+            try:
+                snapped.append((name, point, _snap(point, label)))
+            except RouteError:
+                continue  # 地図データの範囲外の入口は候補から外す
+        if not snapped:
+            raise RouteError(f"{label}が地図データの範囲外です（青い枠の中を選んでください）")
+        return snapped
+
+    sources = snap_all(starts, "出発地")
+    targets = snap_all(goals, "目的地")
+    best = None
+    too_close = False
+    for s_name, s_point, source in sources:
+        for g_name, g_point, target in targets:
+            if source == target:
+                too_close = True
+                continue
+            path, _ = osm.shortest_path(_graph, source, target, weight="length", algo="astar")
+            if path is None:
+                continue
+            result = _path_result(source, path)
+            if best is None or result["distance_m"] < best["distance_m"]:
+                result["start"] = {"name": s_name, "lat": s_point[0], "lon": s_point[1]}
+                result["goal"] = {"name": g_name, "lat": g_point[0], "lon": g_point[1]}
+                best = result
+    if best is None:
+        if too_close:
+            raise RouteError("出発地と目的地が近すぎます。離れた場所を選んでください")
+        raise RouteError("目的地までの経路が見つかりません")
+    return best
+
+
+def find_route_to_nearest(orig: tuple[float, float], goals: list[tuple[str, tuple[float, float]]]) -> dict:
+    """出発地（1地点）から、複数のゴールのうち道のりが一番短いものへの経路を返す。"""
+    return find_route_between([("", orig)], goals)
+
+
 def find_route(orig: tuple[float, float], dest: tuple[float, float]) -> dict:
     """(緯度, 経度) 同士の最短経路を返す。
 
@@ -75,10 +139,4 @@ def find_route(orig: tuple[float, float], dest: tuple[float, float]) -> dict:
     path, _ = osm.shortest_path(_graph, source, target, weight="length", algo="astar")
     if path is None:
         raise RouteError("経路が見つかりません")
-    coords = [[_graph.nodes[source]["y"], _graph.nodes[source]["x"]]]
-    for u, v in zip(path, path[1:]):
-        coords.extend(_edge_coords(u, v)[1:])
-    return {
-        "coords": coords,
-        "distance_m": sum(osm.edge_cost(_graph, u, v, "length") for u, v in zip(path, path[1:])),
-    }
+    return _path_result(source, path)

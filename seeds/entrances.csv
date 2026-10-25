@@ -1,0 +1,6 @@
+facility_id,name,lat,lon,note
+ibaraki-univ-hitachi,正門,36.573100,140.644200,【要確認】茨大前バス停の向かいの位置で仮置き
+ibaraki-univ-hitachi,裏門,36.573500,140.638700,【要確認】キャンパス西側に仮置き
+hitachi-station,中央口,36.591330,140.661310,駅舎（自由通路）西端
+hitachi-station,海岸口,36.590780,140.662850,駅舎（自由通路）東端
+hitachitaga-station,駅前広場,36.552250,140.632250,駅舎前の広場

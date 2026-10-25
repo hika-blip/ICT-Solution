@@ -13,7 +13,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from . import auth, routing
+from . import auth, facilities, routing
 from .db import init_db
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -28,6 +28,7 @@ COOKIE_SECURE = os.getenv("COOKIE_SECURE") == "1"
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    facilities.load_seeds()
     routing.load_graph()
     yield
 
@@ -39,6 +40,7 @@ from .account import router as account_router
 app.include_router(account_router)
 from .pins import router as pins_router
 app.include_router(pins_router)
+app.include_router(facilities.router)
 
 def current_user(request: Request):
     return auth.get_user_by_session(request.cookies.get(SESSION_COOKIE))

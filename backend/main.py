@@ -37,6 +37,8 @@ app.mount("/static", StaticFiles(directory=FRONTEND_DIR / "static"), name="stati
 templates = Jinja2Templates(directory=FRONTEND_DIR / "templates")
 from .account import router as account_router
 app.include_router(account_router)
+from .pins import router as pins_router
+app.include_router(pins_router)
 
 def current_user(request: Request):
     return auth.get_user_by_session(request.cookies.get(SESSION_COOKIE))

@@ -50,6 +50,25 @@ def init_db():
                 created_at TEXT NOT NULL,
                 expires_at TEXT NOT NULL
             );
+
+            -- 地図に立てるピン（情報共有）。is_public=0 にすると本人にだけ見える
+            CREATE TABLE IF NOT EXISTS pins (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                lat        REAL NOT NULL,
+                lon        REAL NOT NULL,
+                body       TEXT NOT NULL DEFAULT '',  -- 本文（写真だけなら空）
+                photo_file TEXT,                      -- 写真のファイル名（なければNULL）
+                is_public  INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL              -- 投稿日時（UTC, ISO形式）
+            );
+            CREATE INDEX IF NOT EXISTS idx_pins_latlon ON pins(lat, lon);
+
+            CREATE TABLE IF NOT EXISTS pin_tags (
+                pin_id INTEGER NOT NULL REFERENCES pins(id) ON DELETE CASCADE,
+                tag    TEXT NOT NULL,
+                PRIMARY KEY (pin_id, tag)
+            );
             """
         )
         # IDを 100001 から始めるため、連番の開始値を設定する（初回のみ）

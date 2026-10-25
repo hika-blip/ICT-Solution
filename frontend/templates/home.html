@@ -24,9 +24,30 @@
       <button type="button" class="button button-secondary" id="use-current">現在地を出発地にする</button>
       <button type="button" class="button button-secondary" id="reset">やり直す</button>
     </div>
+    <div class="pin-bar">
+      <button type="button" class="button button-primary" id="pin-add">ピンを立てる</button>
+      <select id="pin-filter" aria-label="タグで絞り込み"><option value="">すべてのタグ</option></select>
+    </div>
   </div>
   <div id="map"></div>
 </main>
+<form class="pin-sheet" id="pin-sheet" hidden>
+  <h2>ピンを立てる</h2>
+  <p class="pin-where" id="pin-where"></p>
+  <div class="pin-tags" id="pin-tags"></div>
+  <textarea name="body" maxlength="500" placeholder="ひとこと（任意。写真だけでもOK）"></textarea>
+  <input type="file" id="pin-photo" accept="image/jpeg,image/png,image/webp">
+  <img class="pin-preview" id="pin-preview" alt="選んだ写真" hidden>
+  <label class="pin-public">
+    <input type="checkbox" name="is_public" checked>
+    <span>みんなに公開する（オフにすると自分だけに表示）</span>
+  </label>
+  <p class="pin-error" id="pin-error"></p>
+  <div class="route-actions">
+    <button type="button" class="button button-secondary" id="pin-cancel">キャンセル</button>
+    <button type="submit" class="button button-primary">投稿する</button>
+  </div>
+</form>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script>
   // 日立市付近を初期表示にする
@@ -87,6 +108,7 @@
   }
 
   map.on("click", (e) => {
+    if (window.pinMode) return;  // ピンを立てる操作中は経路用に使わない
     if (!orig) {
       setOrig(e.latlng);
     } else if (!dest) {
@@ -111,4 +133,5 @@
     );
   });
 </script>
+<script src="{{ url_for('static', path='js/pins.js') }}"></script>
 {% endblock %}

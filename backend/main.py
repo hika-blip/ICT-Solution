@@ -44,6 +44,16 @@ app.include_router(facilities.router)
 from .walks import router as walks_router
 app.include_router(walks_router)
 
+
+@app.middleware("http")
+async def revalidate_static(request: Request, call_next):
+    response = await call_next(request)
+    # CSS・JS を更新したとき、ブラウザに古いものが残らないよう毎回確認させる
+    # （変更がなければ 304 で済むので、表示は遅くならない）
+    if request.url.path.startswith("/static/"):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
+
 def current_user(request: Request):
     return auth.get_user_by_session(request.cookies.get(SESSION_COOKIE))
 

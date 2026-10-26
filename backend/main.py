@@ -13,7 +13,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from . import auth, facilities, routing
+from . import auth, evacuate, facilities, routing
 from .db import init_db
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -30,6 +30,7 @@ async def lifespan(app: FastAPI):
     init_db()
     facilities.load_seeds()
     routing.load_graph()
+    evacuate.load_sites()
     yield
 
 
@@ -41,6 +42,7 @@ app.include_router(account_router)
 from .pins import router as pins_router
 app.include_router(pins_router)
 app.include_router(facilities.router)
+app.include_router(evacuate.router)
 from .walks import router as walks_router
 app.include_router(walks_router)
 

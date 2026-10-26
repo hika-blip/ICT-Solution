@@ -1,11 +1,13 @@
 // 歩行ログの記録。home.html の地図 `map` と、current_location.js が出す "current-location" を使う。
-// 記録中の点はブラウザにためておき、「記録停止」でまとめて /api/walks に送る。
+// 記録の開始・停止のボタンはメニューの中（_menu.html）にある。
+// 記録中の点はブラウザにためておき、「停止」でまとめて /api/walks に送る。
 // 途中で再読み込みしても続きから記録できるよう、記録中のデータは localStorage にも保存する。
 (function () {
   const DRAFT_KEY = "walklog-draft";
   const MAX_ACCURACY_M = 50;  // 線を描くのに使う点の誤差の上限（サーバと同じ）
   const toggleBtn = document.getElementById("walk-toggle");
-  const infoEl = document.getElementById("walk-info");
+  const infoEl = document.getElementById("walk-info");    // メニューの中の記録の状態
+  const badgeEl = document.getElementById("walk-badge");  // 地図の上の記録中の表示（押すとメニューが開く）
 
   let draft = null;      // 記録中のデータ { startedAt, points: [{lat, lon, accuracy, t}] }
   let unsaved = null;    // 送信に失敗した記録（もう一度送れるように残す）
@@ -14,6 +16,8 @@
   let lastGood = null;   // 線に使った最後の点
   let timer = null;
   let wakeLock = null;
+  let screenNote = "";   // Wake Lock が使えないときの注意書き
+  let badgeTimer = null;
 
   window.walkRecording = false;
 
@@ -28,8 +32,19 @@
   }
 
   const fmtDuration = walkFormat.duration, fmtDistance = walkFormat.distance;  // walk_format.js
+  // 記録の状態をメニューと地図の上の両方に出す。hideAfter [ミリ秒] を指定すると地図の上の表示はその後消す
+  function setStatus(text, hideAfter) {
+    infoEl.textContent = text;
+    infoEl.hidden = false;  // 最初は何も出さず、記録を始めてから表示する
+    badgeEl.textContent = text;
+    badgeEl.hidden = false;
+    clearTimeout(badgeTimer);
+    if (hideAfter) badgeTimer = setTimeout(() => { badgeEl.hidden = true; }, hideAfter);
+  }
+  badgeEl.addEventListener("click", () => window.openMenu());
+
   function showInfo() {
-    infoEl.textContent = `記録中　${fmtDuration((Date.now() - draft.startedAt) / 1000)}・${fmtDistance(distance)}`;
+    setStatus(`● 記録中 ${fmtDuration((Date.now() - draft.startedAt) / 1000)}・${fmtDistance(distance)}${screenNote}`);
   }
 
   // ---- 画面を消さないようにする（Wake Lock API） ----
@@ -71,12 +86,14 @@
     line = L.polyline([], { color: "#E8710A", weight: 5 }).addTo(map);
     draft.points.forEach(addToLine);
     saveDraft();
-    toggleBtn.textContent = "記録停止";
+    toggleBtn.textContent = "歩行の記録を停止";
     toggleBtn.classList.add("walk-recording");
+    screenNote = "";
     showInfo();
     timer = setInterval(showInfo, 1000);
     if (!(await keepScreenOn())) {
-      infoEl.textContent += "（記録中は画面をつけたままにしてください）";
+      screenNote = "（画面をつけたままにしてください）";
+      showInfo();
     }
   }
 
@@ -92,7 +109,7 @@
 
   async function send() {
     toggleBtn.disabled = true;
-    infoEl.textContent = "保存しています…";
+    setStatus("保存しています…");
     try {
       const res = await fetch("/api/walks", {
         method: "POST",
@@ -102,19 +119,20 @@
       if (res.status === 401) { location.href = "/login"; return; }
       const data = await res.json();
       if (res.ok) {
-        infoEl.textContent = `保存しました　${fmtDistance(data.distance_m)}・${fmtDuration(data.duration_s)}`
-          + `・${walkFormat.speed(data.speed_m_per_min)}`;
+        setStatus(`保存しました ${fmtDistance(data.distance_m)}・${fmtDuration(data.duration_s)}`
+          + `・${walkFormat.speed(data.speed_m_per_min)}`, 6000);
         document.dispatchEvent(new CustomEvent("walk-saved", { detail: data }));
       } else {
         // 位置が少なすぎるなど、送り直しても保存できない記録は捨てる
-        infoEl.textContent = data.error || "保存できませんでした。";
+        setStatus(data.error || "保存できませんでした。", 6000);
       }
       unsaved = null;
       clearDraft();
-      toggleBtn.textContent = "記録開始";
+      toggleBtn.textContent = "歩行の記録を開始";
     } catch (e) {
-      infoEl.textContent = "通信に失敗しました。電波のよい場所で「保存し直す」を押してください。";
-      toggleBtn.textContent = "保存し直す";
+      // 地図の上の表示は残し、押すとメニューの「保存し直す」が見えるようにする
+      setStatus("通信に失敗しました。電波のよい場所でメニューの「保存し直す」を押してください。");
+      toggleBtn.textContent = "歩行の記録を保存し直す";
     } finally {
       toggleBtn.disabled = false;
     }

@@ -1,10 +1,12 @@
 {#
   ログイン後の画面の上部バーと、左から開くメニュー。
   使い方: ページの先頭で {% include "_menu.html" %} と書く（user を渡しているページで使う）
+  地図のページ（home.html）では先に {% set map_tools = true %} と書くと、
+  上部バーが地図の上に浮かぶ形になり、メニューに「地図の操作」の欄が追加される。
 #}
 <link rel="stylesheet" href="{{ url_for('static', path='css/menu.css') }}">
 
-<header class="navbar">
+<header class="navbar{% if map_tools %} navbar-floating{% endif %}">
   <button type="button" class="navbar-menu-button" id="menu-open"
           aria-label="メニューを開く" aria-controls="side-menu" aria-expanded="false">
     <span></span><span></span><span></span>
@@ -22,6 +24,17 @@
     </div>
     <button type="button" class="drawer-close" id="menu-close" aria-label="メニューを閉じる">×</button>
   </div>
+  {% if map_tools %}
+  <div class="drawer-tools">
+    <p class="drawer-section">地図の操作</p>
+    <button type="button" class="drawer-item drawer-action" id="walk-toggle">歩行の記録を開始</button>
+    <p class="drawer-note" id="walk-info" role="status" hidden></p>
+    <label class="drawer-filter">
+      <span>ピンをタグで絞り込み</span>
+      <select id="pin-filter"><option value="">すべてのタグ</option></select>
+    </label>
+  </div>
+  {% endif %}
   <ul class="drawer-list">
     <li><a href="/walks" class="drawer-item">歩行ログ</a></li>
     <li><a href="/account" class="drawer-item">登録情報の変更</a></li>
@@ -59,8 +72,14 @@
     setTimeout(() => { overlay.hidden = true; }, 250);
   };
 
+  // 他の JS からも開け閉めできるようにする（home.html の記録中の表示など）
+  window.openMenu = open;
+  window.closeMenu = close;
+
   openBtn.addEventListener("click", open);
   closeBtn.addEventListener("click", close);
+  // 地図の操作のボタンを押したら、結果が見えるようにメニューを閉じる
+  drawer.querySelectorAll(".drawer-action").forEach((btn) => btn.addEventListener("click", close));
   overlay.addEventListener("click", close);
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") close(); });
 

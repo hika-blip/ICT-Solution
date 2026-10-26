@@ -69,6 +69,29 @@ def init_db():
                 tag    TEXT NOT NULL,
                 PRIMARY KEY (pin_id, tag)
             );
+
+            -- 歩行ログ（1回の記録）。距離・時間は保存時にサーバで計算する
+            CREATE TABLE IF NOT EXISTS walks (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                started_at TEXT NOT NULL,   -- 記録開始（UTC, ISO形式）
+                ended_at   TEXT NOT NULL,   -- 記録終了（UTC, ISO形式）
+                distance_m REAL NOT NULL,   -- 歩いた距離 [m]
+                duration_s REAL NOT NULL,   -- 開始〜終了の時間 [秒]
+                moving_s   REAL NOT NULL    -- 止まっていた時間を除いた時間 [秒]
+            );
+            CREATE INDEX IF NOT EXISTS idx_walks_user ON walks(user_id, started_at);
+
+            -- 歩行ログの点（記録した位置）
+            CREATE TABLE IF NOT EXISTS walk_points (
+                walk_id     INTEGER NOT NULL REFERENCES walks(id) ON DELETE CASCADE,
+                seq         INTEGER NOT NULL,  -- 記録した順番（0から）
+                lat         REAL NOT NULL,
+                lon         REAL NOT NULL,
+                accuracy    REAL,              -- 誤差の目安 [m]
+                recorded_at TEXT NOT NULL,     -- 記録した日時（UTC, ISO形式）
+                PRIMARY KEY (walk_id, seq)
+            );
             """
         )
         # IDを 100001 から始めるため、連番の開始値を設定する（初回のみ）

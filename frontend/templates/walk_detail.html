@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}歩行ログ｜ひたふら{% endblock %}
+{% block content %}
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+{% include "_menu.html" %}
+<main class="screen">
+  <a href="/walks" class="back-link">← 歩行ログの一覧に戻る</a>
+  <h2 class="screen-title" id="title">歩行ログ</h2>
+  <div class="walk-map" id="map"></div>
+  <dl class="walk-summary" id="summary"></dl>
+  <p class="alert" id="error" role="alert" hidden></p>
+  <button type="button" class="button button-danger" id="delete" hidden>この記録を削除する</button>
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="{{ url_for('static', path='js/walk_format.js') }}"></script>
+<script>
+(async () => {
+  const WALK_ID = {{ walk_id }};
+  const errorEl = document.getElementById("error");
+  const showError = (text) => { errorEl.textContent = text; errorEl.hidden = false; };
+
+  const map = L.map("map").setView([36.5995, 140.651], 14);
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 19,
+    attribution: "&copy; OpenStreetMap contributors",
+  }).addTo(map);
+
+  const res = await fetch(`/api/walks/${WALK_ID}`);
+  if (res.status === 401) { location.href = "/login"; return; }
+  const w = await res.json();
+  if (!res.ok) { showError(w.error || "記録を読み込めませんでした。"); return; }
+
+  document.getElementById("title").textContent = walkFormat.date(w.started_at);
+  const line = L.polyline(w.coords, { color: "#E8710A", weight: 5 }).addTo(map);
+  L.circleMarker(w.coords[0], { radius: 7, color: "#fff", weight: 2, fillColor: "#2E9D4F", fillOpacity: 1 })
+    .addTo(map).bindTooltip("スタート");
+  L.circleMarker(w.coords[w.coords.length - 1], { radius: 7, color: "#fff", weight: 2, fillColor: "#B3261E", fillOpacity: 1 })
+    .addTo(map).bindTooltip("ゴール");
+  map.fitBounds(line.getBounds(), { padding: [20, 20] });
+
+  const summary = document.getElementById("summary");
+  for (const [label, value] of [
+    ["距離", walkFormat.distance(w.distance_m)],
+    ["時間", walkFormat.duration(w.duration_s)],
+    ["歩いていた時間", walkFormat.duration(w.moving_s)],
+    ["速さ", walkFormat.speed(w.speed_m_per_min)],
+  ]) {
+    const box = document.createElement("div");
+    const dt = document.createElement("dt");
+    const dd = document.createElement("dd");
+    dt.textContent = label;
+    dd.textContent = value;
+    box.append(dt, dd);
+    summary.appendChild(box);
+  }
+
+  const deleteBtn = document.getElementById("delete");
+  deleteBtn.hidden = false;
+  deleteBtn.addEventListener("click", async () => {
+    if (!confirm("この記録を削除しますか？")) return;
+    const r = await fetch(`/api/walks/${WALK_ID}`, { method: "DELETE" });
+    if (r.ok) location.href = "/walks";
+    else showError("削除できませんでした。");
+  });
+})();
+</script>
+{% endblock %}

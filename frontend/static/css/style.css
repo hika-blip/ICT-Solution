@@ -240,3 +240,29 @@ body {
   margin: 8px 8px 0 0; padding: 6px 12px; font-family: inherit; font-size: 0.85rem;
   color: var(--blue-dark); background: var(--blue-light); border: none; border-radius: 8px; cursor: pointer;
 }
+
+/* ===== 歩行ログ ===== */
+.walk-bar { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.walk-bar .button { flex: none; width: 120px; height: 44px; margin-top: 0; font-size: 0.95rem; }
+.walk-bar .button.walk-recording { color: #fff; background: #E8710A; border-color: #E8710A; }
+.walk-info { flex: 1; font-size: 0.85rem; color: var(--muted); line-height: 1.4; }
+.walk-speed {
+  margin: 0 0 16px; padding: 12px 14px; border-radius: var(--radius); background: var(--blue-light);
+}
+.walk-speed strong { font-size: 1.3rem; color: var(--blue-dark); }
+.walk-speed small { display: block; font-size: 0.8rem; color: var(--muted); }
+.walk-list { list-style: none; margin: 0; padding: 0; }
+.walk-list a {
+  display: block; padding: 12px 4px; color: inherit; text-decoration: none; border-bottom: 1px solid var(--border);
+}
+.walk-list a:hover { background: var(--blue-light); }
+.walk-date { display: block; font-weight: 700; }
+.walk-meta { display: block; font-size: 0.9rem; color: var(--muted); }
+.walk-empty { color: var(--muted); }
+.walk-map { height: 320px; margin: 0 -24px 16px; }
+.walk-summary { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 0 0 16px; }
+.walk-summary div { padding: 8px 10px; border-radius: 8px; background: var(--blue-light); }
+.walk-summary dt { font-size: 0.8rem; color: var(--muted); }
+.walk-summary dd { margin: 0; font-weight: 700; }
+.button-danger { background: #fff; color: var(--danger); border-color: var(--danger); }
+.button-danger:hover { background: var(--danger-bg); }

@@ -10,6 +10,14 @@
   .route-actions .button { height: 44px; margin-top: 0; font-size: 0.95rem; }
   #map { flex: 1; min-height: 360px; }
   .screen-map { display: flex; flex-direction: column; padding: 0; }
+  .current-locate {
+    padding: 8px 12px; font-family: inherit; font-size: 0.9rem; font-weight: 700;
+    color: #1A73E8; background: #fff; border: 2px solid rgba(0, 0, 0, 0.2); border-radius: 8px; cursor: pointer;
+  }
+  .current-status {
+    max-width: 240px; padding: 4px 8px; font-size: 0.8rem;
+    background: rgba(255, 255, 255, 0.9); border-radius: 6px;
+  }
 </style>
 <!-- <header class="topbar">
   <span class="topbar-name">ひたふら</span>
@@ -28,6 +36,10 @@
     <div class="pin-bar">
       <button type="button" class="button button-primary" id="pin-add">ピンを立てる</button>
       <select id="pin-filter" aria-label="タグで絞り込み"><option value="">すべてのタグ</option></select>
+    </div>
+    <div class="walk-bar">
+      <button type="button" class="button button-secondary" id="walk-toggle">記録開始</button>
+      <span class="walk-info" id="walk-info" role="status">歩いた道を記録できます</span>
     </div>
   </div>
   <div id="map"></div>
@@ -75,7 +87,10 @@
       map.panInsideBounds(area, { animate: false });
     };
     fitMinZoom();
-    map.setView(area.getCenter(), map.getMinZoom());
+    // 先に現在地が取れていて枠の中なら、現在地を中心にしたままにする（current_location.js）
+    const here = window.currentLocation;
+    if (here && area.contains(here)) map.setView(here, Math.max(map.getZoom(), map.getMinZoom()));
+    else map.setView(area.getCenter(), map.getMinZoom());
 
     // 画面の向きや大きさ、上のパネルの高さが変わったときも計算し直す
     new ResizeObserver(fitMinZoom).observe(document.getElementById("map"));
@@ -89,6 +104,20 @@
   let pendingFacility = null;  // 出発地より先に「ここへ行く」を押された施設
 
   function setMessage(text) { messageEl.textContent = text; }
+
+  // 自分の歩く速さ（歩行ログから計算。記録がなければ標準の速さ）。経路の所要時間に使う
+  let walkSpeed = null;
+  function loadWalkSpeed() {
+    fetch("/api/walks/speed").then((r) => r.ok ? r.json() : null).then((s) => { walkSpeed = s; });
+  }
+  loadWalkSpeed();
+  document.addEventListener("walk-saved", loadWalkSpeed);  // walklog.js で記録を保存したとき
+
+  function walkTimeText(distanceM) {
+    if (!walkSpeed) return "";
+    const minutes = Math.max(1, Math.round(distanceM / walkSpeed.speed_m_per_min));
+    return `（${walkSpeed.is_default ? "標準" : "あなた"}の速さで約 ${minutes} 分）`;
+  }
 
   function reset() {
     [origMarker, destMarker, routeLine].forEach((layer) => layer && map.removeLayer(layer));
@@ -161,7 +190,7 @@
       }
       routeLine = L.polyline(data.coords, { color: "#2E6BB0", weight: 6 }).addTo(map);
       map.fitBounds(routeLine.getBounds(), { padding: [30, 30] });
-      setMessage(`${startLabel} → ${goalLabel}　約 ${Math.round(data.distance_m)} m`);
+      setMessage(`${startLabel} → ${goalLabel}　約 ${Math.round(data.distance_m)} m${walkTimeText(data.distance_m)}`);
     } catch (e) {
       clearDestination();
       setMessage("通信に失敗しました。");
@@ -205,20 +234,25 @@
   document.getElementById("reset").addEventListener("click", reset);
 
   document.getElementById("use-current").addEventListener("click", () => {
+    const useLatLng = (latlng) => {
+      const facility = pendingFacility;  // reset で消えないように退避
+      reset();
+      pendingFacility = facility;
+      setOrig(latlng);
+      map.setView(latlng, 16);
+    };
+    // 地図に表示中の現在地があればそれを使う（current_location.js）
+    if (window.currentLocation) { useLatLng(window.currentLocation); return; }
     if (!navigator.geolocation) { setMessage("この端末では現在地を取得できません。"); return; }
     navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const latlng = L.latLng(pos.coords.latitude, pos.coords.longitude);
-        const facility = pendingFacility;  // reset で消えないように退避
-        reset();
-        pendingFacility = facility;
-        setOrig(latlng);
-        map.setView(latlng, 16);
-      },
+      (pos) => useLatLng(L.latLng(pos.coords.latitude, pos.coords.longitude)),
       () => setMessage("現在地を取得できませんでした。地図をタップして選んでください。"),
     );
   });
 </script>
 <script src="{{ url_for('static', path='js/pins.js') }}"></script>
 <script src="{{ url_for('static', path='js/facilities.js') }}"></script>
+<script src="{{ url_for('static', path='js/walk_format.js') }}"></script>
+<script src="{{ url_for('static', path='js/walklog.js') }}"></script>
+<script src="{{ url_for('static', path='js/current_location.js') }}"></script>
 {% endblock %}

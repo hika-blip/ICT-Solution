@@ -2,8 +2,8 @@
 
 日立市オープンデータ「指定避難場所」「指定避難所」（CC BY 4.0）の CSV を起動時に読み込む（DBには入れない）。
   https://www.city.hitachi.lg.jp/opendata/datalist/1009216.html
-  data/evacuation_sites.csv    指定避難場所（082023_evacuation_space2.csv）
-  data/evacuation_shelters.csv 指定避難所（082023_evacuation_site2.csv を UTF-8 に変換したもの）
+  seeds/evacuation_sites.csv   指定避難場所（082023_evacuation_space2.csv）
+  seeds/evacuation_shelters.csv 指定避難所（082023_evacuation_site2.csv を UTF-8 に変換したもの）
   1行目: タイトル行、2行目: 見出し（No.,名称,住所,緯度,経度）、3行目以降: データ
 両方に載っている施設（同じ座標）は1件にまとめ、kinds に両方の種別を入れる。
 
@@ -22,7 +22,7 @@ from .db import BASE_DIR
 router = APIRouter()
 
 SESSION_COOKIE = "session"   # main.py と同じ名前
-DATA_DIR = BASE_DIR / "data"
+SEEDS_DIR = BASE_DIR / "seeds"
 # (ファイル名, 種別)。先に書いたほうの名前を、重複した施設の名前に使う
 SOURCES = [
     ("evacuation_sites.csv", "避難場所"),
@@ -73,7 +73,7 @@ def load_sites() -> int:
     _sites.clear()
     by_point = {}
     for name, kind in SOURCES:
-        path = DATA_DIR / name
+        path = SEEDS_DIR / name
         if not path.exists():
             continue
         for site in _read_sites(path, kind):

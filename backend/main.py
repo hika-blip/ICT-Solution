@@ -41,6 +41,8 @@ app.include_router(account_router)
 from .pins import router as pins_router
 app.include_router(pins_router)
 app.include_router(facilities.router)
+from .walks import router as walks_router
+app.include_router(walks_router)
 
 def current_user(request: Request):
     return auth.get_user_by_session(request.cookies.get(SESSION_COOKIE))

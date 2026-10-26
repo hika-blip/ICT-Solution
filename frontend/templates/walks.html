@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}歩行ログ｜ひたふら{% endblock %}
+{% block content %}
+{% include "_menu.html" %}
+<main class="screen">
+  <a href="/home" class="back-link">← ホームに戻る</a>
+  <h2 class="screen-title">歩行ログ</h2>
+  <p class="walk-speed" id="speed">あなたの歩く速さを計算しています…</p>
+  <ul class="walk-list" id="list"></ul>
+</main>
+<script src="{{ url_for('static', path='js/walk_format.js') }}"></script>
+<script>
+(async () => {
+  const speedEl = document.getElementById("speed");
+  const listEl = document.getElementById("list");
+
+  function el(tag, className, text) {
+    const e = document.createElement(tag);
+    if (className) e.className = className;
+    if (text !== undefined) e.textContent = text;
+    return e;
+  }
+
+  const [speedRes, listRes] = await Promise.all([fetch("/api/walks/speed"), fetch("/api/walks")]);
+  if (speedRes.status === 401 || listRes.status === 401) { location.href = "/login"; return; }
+  const speed = await speedRes.json();
+  const walks = await listRes.json();
+
+  speedEl.textContent = "";
+  speedEl.append("あなたの歩く速さ：", el("strong", "", walkFormat.speed(speed.speed_m_per_min)));
+  speedEl.append(el("small", "", speed.is_default
+    ? "まだ記録が足りないため、標準の速さです。200 m 以上歩いて記録すると、あなたの速さになります。"
+    : `直近 ${speed.walks} 回の記録から計算しています。経路検索の所要時間に使われます。`));
+
+  if (!walks.length) {
+    listEl.appendChild(el("li", "walk-empty", "まだ記録がありません。ホームの「記録開始」から記録できます。"));
+    return;
+  }
+  for (const w of walks) {
+    const a = el("a");
+    a.href = `/walks/${w.id}`;
+    a.append(
+      el("span", "walk-date", walkFormat.date(w.started_at)),
+      el("span", "walk-meta",
+        `${walkFormat.distance(w.distance_m)}・${walkFormat.duration(w.duration_s)}・${walkFormat.speed(w.speed_m_per_min)}`),
+    );
+    const li = el("li");
+    li.appendChild(a);
+    listEl.appendChild(li);
+  }
+})();
+</script>
+{% endblock %}

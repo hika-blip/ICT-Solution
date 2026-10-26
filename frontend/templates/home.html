@@ -40,6 +40,15 @@
   .map-fab:hover { background: var(--blue-light); }
   .map-fab-pin { color: #fff; background: #2E9D4F; }
   .map-fab-pin:hover { background: #237A3D; }
+  /* 拡大・縮小ボタン：ピン・現在地ボタン（下から約130px）の上に置き、押しやすい大きさにする */
+  .leaflet-bottom.leaflet-right .leaflet-control-zoom {
+    margin: 0 12px 140px 0; border: none; border-radius: 12px; overflow: hidden;
+    box-shadow: 0 1px 6px rgba(0, 0, 0, 0.3);
+  }
+  .leaflet-control-zoom a.leaflet-control-zoom-in,
+  .leaflet-control-zoom a.leaflet-control-zoom-out {
+    width: 44px; height: 40px; line-height: 40px; font-size: 1.3rem; color: var(--text);
+  }
   .current-status {
     max-width: 240px; padding: 4px 8px; font-size: 0.8rem;
     background: rgba(255, 255, 255, 0.9); border-radius: 6px;
@@ -87,8 +96,9 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script>
   // 日立市付近を初期表示にする
-  // 拡大・縮小のボタンは出さない（スマホはピンチ、PCはマウスホイールで操作する）
+  // 拡大・縮小のボタンは左上だとメニューボタンと重なるので、右下（ピン・現在地の上）に出す
   const map = L.map("map", { zoomControl: false }).setView([36.5995, 140.651], 14);
+  L.control.zoom({ position: "bottomright", zoomInTitle: "拡大", zoomOutTitle: "縮小" }).addTo(map);
   L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
     maxZoom: 19,
     attribution: "&copy; OpenStreetMap contributors",

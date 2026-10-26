@@ -72,24 +72,29 @@ def _path_result(source: int, path: list[int]) -> dict:
     }
 
 
-def find_route_between(
-    starts: list[tuple[str, tuple[float, float]]],
-    goals: list[tuple[str, tuple[float, float]]],
-) -> dict:
+def straight_m(a: tuple[float, float], b: tuple[float, float]) -> float:
+    """2地点間の直線距離[m]。"""
+    return osm.haversine(*a, *b)
+
+
+def find_route_between(starts: list[tuple], goals: list[tuple]) -> dict:
     """出発候補と目的候補（施設の入口など）の組み合わせのうち、道のりが一番短い経路を返す。
 
-    starts, goals: [(名前, (緯度, 経度)), ...]   ※地点1つなら名前は "" でよい
-    戻り値: {"coords": [...], "distance_m": 距離[m],
-             "start": {"name", "lat", "lon"}, "goal": {"name", "lat", "lon"}}
+    starts, goals: [(名前, (緯度, 経度)), ...] または [(名前, (緯度, 経度), 追加距離[m]), ...]
+      ※追加距離は、道の外（敷地内など）を歩く分。比べるときと合計の距離に足す
+    戻り値: {"coords": [...], "distance_m": 合計距離[m],
+             "start": {"name", "lat", "lon", "extra_m"}, "goal": {"name", "lat", "lon", "extra_m"}}
     """
     if _graph is None:
         raise RouteError(f"地図データがありません（{GRAPH_PATH} を置いてください）")
 
     def snap_all(points, label):
         snapped = []
-        for name, point in points:
+        for item in points:
+            name, point = item[0], item[1]
+            extra = item[2] if len(item) > 2 else 0.0
             try:
-                snapped.append((name, point, _snap(point, label)))
+                snapped.append((name, point, extra, _snap(point, label)))
             except RouteError:
                 continue  # 地図データの範囲外の入口は候補から外す
         if not snapped:
@@ -100,8 +105,8 @@ def find_route_between(
     targets = snap_all(goals, "目的地")
     best = None
     too_close = False
-    for s_name, s_point, source in sources:
-        for g_name, g_point, target in targets:
+    for s_name, s_point, s_extra, source in sources:
+        for g_name, g_point, g_extra, target in targets:
             if source == target:
                 too_close = True
                 continue
@@ -109,9 +114,10 @@ def find_route_between(
             if path is None:
                 continue
             result = _path_result(source, path)
+            result["distance_m"] += s_extra + g_extra
             if best is None or result["distance_m"] < best["distance_m"]:
-                result["start"] = {"name": s_name, "lat": s_point[0], "lon": s_point[1]}
-                result["goal"] = {"name": g_name, "lat": g_point[0], "lon": g_point[1]}
+                result["start"] = {"name": s_name, "lat": s_point[0], "lon": s_point[1], "extra_m": s_extra}
+                result["goal"] = {"name": g_name, "lat": g_point[0], "lon": g_point[1], "extra_m": g_extra}
                 best = result
     if best is None:
         if too_close:

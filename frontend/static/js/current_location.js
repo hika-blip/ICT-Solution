@@ -9,7 +9,7 @@
   let accuracyCircle = null;  // 誤差の目安の円
   let watchId = null;
 
-  // 最後に取得した位置（home.html の「現在地を出発地にする」でも使う）
+  // 最後に取得した位置（home.html の「現在地」ボタンで出発地にするときに使う）
   window.currentLocation = null;
 
   // ---- 状態表示（地図の左下） ----
@@ -28,31 +28,11 @@
     div.hidden = !text;
   }
 
-  // ---- 「現在地」ボタン（地図の右上） ----
-  const LocateControl = L.Control.extend({
-    options: { position: "topright" },
-    onAdd() {
-      const btn = L.DomUtil.create("button", "current-locate");
-      btn.type = "button";
-      btn.textContent = "現在地";
-      L.DomEvent.disableClickPropagation(btn);  // 地図のクリック（出発地の選択）にしない
-      L.DomEvent.on(btn, "click", centerOnCurrent);
-      return btn;
-    },
-  });
-  new LocateControl().addTo(map);
-
   // 地図に表示できる範囲（/api/area の枠）の中か
+  // （右下の「現在地」ボタンの処理は home.html にある。押すと現在地へ移動して出発地にする）
   function insideArea(latlng) {
     const bounds = map.options.maxBounds;
     return !bounds || bounds.contains(latlng);
-  }
-
-  function centerOnCurrent() {
-    const here = window.currentLocation;
-    if (!here) { setStatus("まだ現在地を取得できていません"); return; }
-    if (!insideArea(here)) { setStatus("現在地が地図の範囲外です"); return; }
-    map.setView(here, Math.max(map.getZoom(), CURRENT_ZOOM));
   }
 
   // ---- 位置情報のコールバック ----

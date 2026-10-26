@@ -4,15 +4,50 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="stylesheet" href="{{ url_for('static', path='css/facilities.css') }}">
 <style>
-  .route-panel { padding: 12px 16px; background: #fff; border-bottom: 1px solid var(--border); }
-  .route-message { margin: 0 0 8px; font-size: 0.95rem; }
-  .route-actions { display: flex; gap: 8px; }
-  .route-actions .button { height: 44px; margin-top: 0; font-size: 0.95rem; }
-  #map { flex: 1; min-height: 360px; }
-  .screen-map { display: flex; flex-direction: column; padding: 0; }
-  .current-locate {
-    padding: 8px 12px; font-family: inherit; font-size: 0.9rem; font-weight: 700;
-    color: #1A73E8; background: #fff; border: 2px solid rgba(0, 0, 0, 0.2); border-radius: 8px; cursor: pointer;
+  /* 地図を全画面にして、操作は地図の上に浮かべる（上部バーは _menu.html の navbar-floating） */
+  .app { position: relative; }
+  .screen-map { position: relative; display: flex; flex-direction: column; padding: 0; overflow: hidden; }
+  #map { flex: 1; height: 100vh; height: 100dvh; }
+  @media (min-width: 600px) { #map { height: calc(100vh - 48px); } }  /* PCでは .app の上下の余白の分を引く */
+  .map-top {
+    position: absolute; top: 12px; left: 68px; right: 12px; z-index: 1050;
+    display: flex; flex-direction: column; align-items: flex-start; gap: 6px; pointer-events: none;
+  }
+  .map-top > * { max-width: 100%; pointer-events: auto; }  /* 長い案内文で画面の横幅を超えないようにする */
+  .route-banner {
+    display: flex; align-items: center; gap: 4px; min-height: 44px; padding: 6px 6px 6px 14px;
+    background: #fff; border-radius: 22px; box-shadow: 0 1px 6px rgba(0, 0, 0, 0.3);
+  }
+  .route-message { margin: 0; font-size: 0.85rem; line-height: 1.4; }
+  .route-reset {
+    flex: none; width: 32px; height: 32px; font-size: 1.2rem; line-height: 1; color: var(--muted);
+    background: transparent; border: none; border-radius: 50%; cursor: pointer;
+  }
+  .route-reset:hover { background: rgba(0, 0, 0, 0.06); }
+  .walk-badge {
+    padding: 4px 12px; font-family: inherit; font-size: 0.85rem; font-weight: 700; color: #fff;
+    background: #E8710A; border: none; border-radius: 999px; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3); cursor: pointer;
+  }
+  .map-fabs {
+    position: absolute; right: 12px; bottom: 32px; z-index: 1050;
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .map-fab {
+    min-width: 56px; height: 44px; padding: 0 14px; font-family: inherit; font-size: 0.9rem; font-weight: 700;
+    color: var(--blue); background: #fff; border: none; border-radius: 22px;
+    box-shadow: 0 1px 6px rgba(0, 0, 0, 0.3); cursor: pointer;
+  }
+  .map-fab:hover { background: var(--blue-light); }
+  .map-fab-pin { color: #fff; background: #2E9D4F; }
+  .map-fab-pin:hover { background: #237A3D; }
+  /* 拡大・縮小ボタン：ピン・現在地ボタン（下から約130px）の上に置き、押しやすい大きさにする */
+  .leaflet-bottom.leaflet-right .leaflet-control-zoom {
+    margin: 0 12px 140px 0; border: none; border-radius: 12px; overflow: hidden;
+    box-shadow: 0 1px 6px rgba(0, 0, 0, 0.3);
+  }
+  .leaflet-control-zoom a.leaflet-control-zoom-in,
+  .leaflet-control-zoom a.leaflet-control-zoom-out {
+    width: 44px; height: 40px; line-height: 40px; font-size: 1.3rem; color: var(--text);
   }
   .current-status {
     max-width: 240px; padding: 4px 8px; font-size: 0.8rem;
@@ -25,24 +60,21 @@
     <button type="submit" class="topbar-logout">ログアウト</button>
   </form>
 </header> -->
+{% set map_tools = true %}
 {% include "_menu.html" %}
 <main class="screen screen-map">
-  <div class="route-panel">
-    <p class="route-message" id="message">地図をタップして出発地を選んでください。</p>
-    <div class="route-actions">
-      <button type="button" class="button button-secondary" id="use-current">現在地を出発地にする</button>
-      <button type="button" class="button button-secondary" id="reset">やり直す</button>
-    </div>
-    <div class="pin-bar">
-      <button type="button" class="button button-primary" id="pin-add">ピンを立てる</button>
-      <select id="pin-filter" aria-label="タグで絞り込み"><option value="">すべてのタグ</option></select>
-    </div>
-    <div class="walk-bar">
-      <button type="button" class="button button-secondary" id="walk-toggle">記録開始</button>
-      <span class="walk-info" id="walk-info" role="status">歩いた道を記録できます</span>
-    </div>
-  </div>
   <div id="map"></div>
+  <div class="map-top">
+    <div class="route-banner">
+      <p class="route-message" id="message">地図をタップして出発地を選んでください。</p>
+      <button type="button" class="route-reset" id="reset" aria-label="やり直す" title="やり直す" hidden>×</button>
+    </div>
+    <button type="button" class="walk-badge" id="walk-badge" hidden></button>
+  </div>
+  <div class="map-fabs">
+    <button type="button" class="map-fab map-fab-pin" id="pin-add">ピン</button>
+    <button type="button" class="map-fab" id="locate">現在地</button>
+  </div>
 </main>
 <form class="pin-sheet" id="pin-sheet" hidden>
   <h2>ピンを立てる</h2>
@@ -64,7 +96,9 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script>
   // 日立市付近を初期表示にする
-  const map = L.map("map").setView([36.5995, 140.651], 14);
+  // 拡大・縮小のボタンは左上だとメニューボタンと重なるので、右下（ピン・現在地の上）に出す
+  const map = L.map("map", { zoomControl: false }).setView([36.5995, 140.651], 14);
+  L.control.zoom({ position: "bottomright", zoomInTitle: "拡大", zoomOutTitle: "縮小" }).addTo(map);
   L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
     maxZoom: 19,
     attribution: "&copy; OpenStreetMap contributors",
@@ -97,6 +131,7 @@
   });
 
   const messageEl = document.getElementById("message");
+  const resetBtn = document.getElementById("reset");  // 案内文の「×」。経路を選んでいる最中だけ出す
   // 出発地・目的地は「地図上の地点」か「施設（駅・学校など）」のどちらか。
   // 施設のときは origFacility / destFacility に施設が入り、経路は入口の組み合わせのうち一番近いものになる
   let orig = null, dest = null, origMarker = null, destMarker = null, routeLine = null;
@@ -123,6 +158,7 @@
     [origMarker, destMarker, routeLine].forEach((layer) => layer && map.removeLayer(layer));
     orig = dest = origMarker = destMarker = routeLine = null;
     origFacility = pendingFacility = null;
+    resetBtn.hidden = true;
     setMessage("地図をタップして出発地を選んでください。");
   }
 
@@ -137,6 +173,7 @@
     if (origMarker) map.removeLayer(origMarker);
     const label = facility ? `出発：${facility.name}` : "出発地";
     origMarker = L.marker(latlng).addTo(map).bindTooltip(label, { permanent: true });
+    resetBtn.hidden = false;
     setMessage("次に目的地をタップするか、施設のピンを選んで「ここへ行く」を押してください。");
     // 先に施設の「ここへ行く」が押されていたら、その施設への経路を探す
     if (pendingFacility) {
@@ -218,7 +255,7 @@
     map.closePopup();
     if (!orig) {
       pendingFacility = facility;
-      setMessage(`${facility.name}へ行きます。出発地を地図でタップするか、施設の「ここから出発」か「現在地を出発地にする」を押してください。`);
+      setMessage(`${facility.name}へ行きます。出発地を地図でタップするか、施設の「ここから出発」か、右下の「現在地」を押してください。`);
       return;
     }
     if (origFacility && origFacility.id === facility.id) {
@@ -246,10 +283,14 @@
     }
   });
 
-  document.getElementById("reset").addEventListener("click", reset);
+  resetBtn.addEventListener("click", reset);
 
-  document.getElementById("use-current").addEventListener("click", () => {
+  // 右下の「現在地」ボタン：現在地へ移動して、そこを出発地にする
+  document.getElementById("locate").addEventListener("click", () => {
     const useLatLng = (latlng) => {
+      const area = map.options.maxBounds;  // 地図に表示できる範囲（/api/area の枠）
+      if (area && !area.contains(latlng)) { setMessage("現在地が地図の範囲外のため、出発地にできません。"); return; }
+      if (window.pinMode) { map.setView(latlng, 16); return; }  // ピンを立てる操作中は移動だけ
       const facility = pendingFacility;  // reset で消えないように退避
       reset();
       pendingFacility = facility;

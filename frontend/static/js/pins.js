@@ -98,7 +98,7 @@
   // ---- 投稿 ----
   function setPinMode(on) {
     window.pinMode = on;
-    addBtn.textContent = on ? "キャンセル" : "ピンを立てる";
+    addBtn.textContent = on ? "やめる" : "ピン";
     document.getElementById("map").classList.toggle("map-pin-mode", on);
     document.getElementById("message").textContent = on
       ? "ピンを立てる場所を地図でタップしてください。"

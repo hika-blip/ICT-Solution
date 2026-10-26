@@ -175,20 +175,35 @@
         setMessage((data.error || "経路を取得できませんでした。") + " 目的地を選び直してください。");
         return;
       }
+      const lines = [L.polyline(data.coords, { color: "#2E6BB0", weight: 6 })];
+      // 敷地内（校内など）の、地点と門の間は道の情報が無いので点線でつなぐ
+      const insideLeg = (from, to) => L.polyline([from, to],
+        { color: "#2E6BB0", weight: 4, dashArray: "6 8", interactive: false });
+
       // 出発地が施設なら、実際に使う出口の位置へ印を動かす
       let startLabel = "出発地";
+      const startGate = L.latLng(data.start.lat, data.start.lon);
       if (origFacility) {
         startLabel = placeLabel(origFacility, data.start);
-        origMarker.setLatLng([data.start.lat, data.start.lon]).setTooltipContent(`出発：${startLabel}`);
+        origMarker.setLatLng(startGate).setTooltipContent(`出発：${startLabel}`);
+      } else if (data.orig_facility && data.orig_facility.inside) {
+        // 出発地が敷地の中 → 一番近くなる門から出る
+        startLabel = `出発地（${data.orig_facility.name}内）→ ${data.start.name || "入口"}`;
+        lines.push(insideLeg(orig, startGate));
       }
       let goalLabel = "目的地";
+      const goalGate = L.latLng(data.goal.lat, data.goal.lon);
       if (destFac) {
         goalLabel = placeLabel(destFac, data.goal);
         if (destMarker) map.removeLayer(destMarker);
-        dest = L.latLng(data.goal.lat, data.goal.lon);
+        dest = goalGate;
         destMarker = L.marker(dest).addTo(map).bindTooltip(goalLabel, { permanent: true });
+      } else if (data.dest_facility && data.dest_facility.inside) {
+        // 目的地が敷地の中 → 一番近くなる門から入る
+        goalLabel = `${data.goal.name || "入口"} → 目的地（${data.dest_facility.name}内）`;
+        lines.push(insideLeg(goalGate, dest));
       }
-      routeLine = L.polyline(data.coords, { color: "#2E6BB0", weight: 6 }).addTo(map);
+      routeLine = L.featureGroup(lines).addTo(map);
       map.fitBounds(routeLine.getBounds(), { padding: [30, 30] });
       setMessage(`${startLabel} → ${goalLabel}　約 ${Math.round(data.distance_m)} m${walkTimeText(data.distance_m)}`);
     } catch (e) {

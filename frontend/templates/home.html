@@ -10,6 +10,27 @@
   .route-actions .button { height: 44px; margin-top: 0; font-size: 0.95rem; }
   #map { flex: 1; min-height: 360px; }
   .screen-map { display: flex; flex-direction: column; padding: 0; }
+  .mode-tabs { display: flex; background: #fff; border-bottom: 1px solid var(--border); }
+  .mode-tab {
+    flex: 1; padding: 12px 8px; font-family: inherit; font-size: 1rem; font-weight: 700;
+    color: #555; background: #fff; border: 0; border-bottom: 4px solid transparent; cursor: pointer;
+  }
+  .mode-tab[aria-selected="true"] { color: #2E6BB0; border-bottom-color: #2E6BB0; }
+  .mode-tab.mode-tab-emergency[aria-selected="true"] { color: #D93025; border-bottom-color: #D93025; background: #FDECEA; }
+  #panel-emergency { background: #FDECEA; }
+  .evac-list { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+  .evac-item {
+    display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 10px; text-align: left;
+    font-family: inherit; font-size: 0.9rem; color: inherit; background: #fff;
+    border: 2px solid var(--border); border-radius: 8px; cursor: pointer;
+  }
+  .evac-item[aria-pressed="true"] { border-color: var(--evac-color); box-shadow: 0 0 0 1px var(--evac-color); }
+  .evac-rank {
+    flex: none; width: 26px; height: 26px; line-height: 26px; text-align: center;
+    font-weight: 700; color: #fff; border-radius: 50%; background: var(--evac-color);
+  }
+  .evac-name { font-weight: 700; }
+  .evac-detail { display: block; font-size: 0.82rem; color: #555; }
   .current-locate {
     padding: 8px 12px; font-family: inherit; font-size: 0.9rem; font-weight: 700;
     color: #1A73E8; background: #fff; border: 2px solid rgba(0, 0, 0, 0.2); border-radius: 8px; cursor: pointer;
@@ -27,7 +48,23 @@
 </header> -->
 {% include "_menu.html" %}
 <main class="screen screen-map">
-  <div class="route-panel">
+  <div class="mode-tabs" role="tablist" aria-label="モード切り替え">
+    <button type="button" class="mode-tab" id="tab-normal" role="tab" aria-selected="true" aria-controls="panel-normal">平常時</button>
+    <button type="button" class="mode-tab mode-tab-emergency" id="tab-emergency" role="tab" aria-selected="false" aria-controls="panel-emergency">緊急時</button>
+  </div>
+  <div class="route-panel" id="panel-emergency" role="tabpanel" aria-labelledby="tab-emergency" hidden>
+    <p class="route-message" id="evac-message">「避難場所を探す」を押すと、現在地から近い避難場所3か所への経路を表示します。</p>
+    <div class="route-actions">
+      <button type="button" class="button button-primary" id="evac-search">避難場所を探す</button>
+      <button type="button" class="button button-secondary" id="evac-reset">やり直す</button>
+    </div>
+    <!-- テスト用：範囲内のランダムな地点から探す（本番では消す） -->
+    <div class="route-actions" style="margin-top: 8px;">
+      <button type="button" class="button button-secondary" id="evac-random">【テスト】ランダムな地点から探す</button>
+    </div>
+    <ol class="evac-list" id="evac-list"></ol>
+  </div>
+  <div class="route-panel" id="panel-normal" role="tabpanel" aria-labelledby="tab-normal">
     <p class="route-message" id="message">地図をタップして出発地を選んでください。</p>
     <div class="route-actions">
       <button type="button" class="button button-secondary" id="use-current">現在地を出発地にする</button>
@@ -216,6 +253,7 @@
   // 「ここへ行く」
   window.goToFacility = (facility) => {
     map.closePopup();
+    if (window.emergencyMode) return;
     if (!orig) {
       pendingFacility = facility;
       setMessage(`${facility.name}へ行きます。出発地を地図でタップするか、施設の「ここから出発」か「現在地を出発地にする」を押してください。`);
@@ -231,6 +269,7 @@
   // 「ここから出発」
   window.startFromFacility = (facility) => {
     map.closePopup();
+    if (window.emergencyMode) return;
     const target = pendingFacility && pendingFacility.id !== facility.id ? pendingFacility : null;
     reset();
     pendingFacility = target;
@@ -238,7 +277,7 @@
   };
 
   map.on("click", (e) => {
-    if (window.pinMode) return;  // ピンを立てる操作中は経路用に使わない
+    if (window.pinMode || window.emergencyMode) return;  // ピンを立てる操作中は経路用に使わない
     if (!orig) {
       setOrig(e.latlng);
     } else if (!dest) {
@@ -270,4 +309,5 @@
 <script src="{{ url_for('static', path='js/walk_format.js') }}"></script>
 <script src="{{ url_for('static', path='js/walklog.js') }}"></script>
 <script src="{{ url_for('static', path='js/current_location.js') }}"></script>
+<script src="{{ url_for('static', path='js/emergency.js') }}"></script>
 {% endblock %}

@@ -146,3 +146,34 @@ body.menu-open .drawer { transform: translateX(0); visibility: visible; }
 }
 .field-group-title { padding: 0 6px; font-weight: 700; }
 .field-group > .field-hint { margin: -6px 0 0; }
+
+/* ===== 地図のページ：上部バーを地図の上に浮かべる ===== */
+.navbar-floating {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  height: auto;
+  padding: 0;
+  background: transparent;
+}
+.navbar-floating .navbar-title { display: none; }
+.navbar-floating .navbar-menu-button {
+  background: #fff;
+  border-radius: 50%;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.3);
+}
+.navbar-floating .navbar-menu-button span { background: var(--text, #1A1A1A); }
+.navbar-floating .navbar-menu-button:hover,
+.navbar-floating .navbar-menu-button:focus-visible { background: var(--blue-light, #EAF2FB); }
+
+/* ===== メニュー内の「地図の操作」 ===== */
+.drawer-tools { padding: 8px 0; border-bottom: 6px solid #EEF1F5; }
+.drawer-section { margin: 4px 20px 0; font-size: 0.8rem; font-weight: 700; color: var(--muted, #5B6573); }
+.drawer-action { color: var(--blue, #2E6BB0); font-weight: 700; }
+.drawer-action.walk-recording { color: #E8710A; }
+.drawer-note { margin: 0; padding: 4px 20px 10px; font-size: 0.85rem; color: var(--muted, #5B6573); border-bottom: 1px solid #EEF1F5; }
+.drawer-filter { display: flex; flex-direction: column; gap: 6px; padding: 12px 20px; font-size: 0.95rem; }
+.drawer-filter select {
+  height: 44px; padding: 0 8px; font-size: 0.95rem; font-family: inherit;
+  border: 2px solid var(--border, #C9D2DD); border-radius: 8px; background: #fff;
+}

@@ -196,12 +196,6 @@ body {
 }
 
 /* ===== 地図のピン ===== */
-.pin-bar { display: flex; gap: 8px; margin-top: 8px; }
-.pin-bar .button { flex: 1; height: 44px; margin-top: 0; font-size: 0.95rem; }
-.pin-bar select {
-  flex: 1; height: 44px; font-size: 0.95rem; font-family: inherit;
-  border: 2px solid var(--border); border-radius: var(--radius); background: #fff; padding: 0 8px;
-}
 .map-pin-mode { cursor: crosshair; }
 .pin-icon span {
   display: block; width: 22px; height: 22px; margin: 2px;
@@ -220,7 +214,7 @@ body {
   color: var(--danger); background: var(--danger-bg); border: none; border-radius: 8px; cursor: pointer;
 }
 .pin-sheet {
-  position: fixed; left: 0; right: 0; bottom: 0; z-index: 1000; max-height: 80vh; overflow-y: auto;
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 1200; max-height: 80vh; overflow-y: auto;
   padding: 16px; background: #fff; border-radius: 16px 16px 0 0; box-shadow: 0 -4px 16px rgba(0,0,0,.25);
 }
 .pin-sheet[hidden] { display: none; }
@@ -242,10 +236,6 @@ body {
 }
 
 /* ===== 歩行ログ ===== */
-.walk-bar { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
-.walk-bar .button { flex: none; width: 120px; height: 44px; margin-top: 0; font-size: 0.95rem; }
-.walk-bar .button.walk-recording { color: #fff; background: #E8710A; border-color: #E8710A; }
-.walk-info { flex: 1; font-size: 0.85rem; color: var(--muted); line-height: 1.4; }
 .walk-speed {
   margin: 0 0 16px; padding: 12px 14px; border-radius: var(--radius); background: var(--blue-light);
 }

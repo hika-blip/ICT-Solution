@@ -9,12 +9,16 @@
   const panelEmergency = document.getElementById("panel-emergency");
   const messageEl = document.getElementById("evac-message");
   const listEl = document.getElementById("evac-list");
+  const sliderEl = document.getElementById("evac-slider");
+  const prevBtn = document.getElementById("evac-prev");
+  const nextBtn = document.getElementById("evac-next");
   const START_MESSAGE = "「避難場所を探す」を押すと、現在地から近い避難場所3か所への経路を表示します。";
 
   let origin = null;     // 避難経路の出発地（現在地かタップした地点）
   let originMarker = null;
   let routes = [];       // [{ line, marker, item, data }]
   let searching = false;
+  let current = 0;       // 選択中の経路の番号
 
   window.emergencyMode = false;
 
@@ -23,7 +27,9 @@
   function clearRoutes() {
     routes.forEach((r) => { map.removeLayer(r.line); map.removeLayer(r.marker); });
     routes = [];
+    current = 0;
     listEl.replaceChildren();
+    sliderEl.hidden = true;
   }
 
   function clearAll() {
@@ -38,8 +44,30 @@
     originMarker = L.marker(latlng).addTo(map).bindTooltip("出発地", { permanent: true });
   }
 
+  // 一覧（横スライド）の index 番目のカードが先頭に来るスクロール位置
+  function slideLeft(index) {
+    return routes[index].item.parentElement.offsetLeft - routes[0].item.parentElement.offsetLeft;
+  }
+
+  // スワイプが止まったら、いちばん手前に来たカードの経路を選ぶ
+  let scrollTimer = null;
+  listEl.addEventListener("scroll", () => {
+    clearTimeout(scrollTimer);
+    scrollTimer = setTimeout(() => {
+      if (!routes.length) return;
+      let nearest = 0;
+      routes.forEach((_, i) => {
+        if (Math.abs(slideLeft(i) - listEl.scrollLeft) < Math.abs(slideLeft(nearest) - listEl.scrollLeft)) nearest = i;
+      });
+      if (routes[nearest].item.getAttribute("aria-pressed") !== "true") select(nearest);
+    }, 120);
+  });
+
   // 選んだ経路を太く前面に出し、ほかは細く薄くする
   function select(index) {
+    current = index;
+    prevBtn.disabled = index === 0;
+    nextBtn.disabled = index === routes.length - 1;
     routes.forEach((r, i) => {
       const on = i === index;
       r.line.setStyle({ weight: on ? 8 : 4, opacity: on ? 1 : 0.45 });
@@ -49,6 +77,7 @@
     const r = routes[index];
     map.fitBounds(r.line.getBounds(), { padding: [30, 30] });
     r.marker.openTooltip();
+    listEl.scrollTo({ left: slideLeft(index), behavior: "smooth" });  // 地図側で選んだときも一覧をそのカードへ
     const d = r.data;
     setMessage(`${d.site.name} へ約 ${Math.round(d.distance_m)} m${walkTimeText(d.distance_m)}`);
   }
@@ -86,8 +115,12 @@
       listEl.append(li);
       routes.push({ line, marker, item: btn, data });
     });
+    sliderEl.hidden = false;
     select(0);
   }
+
+  prevBtn.addEventListener("click", () => { if (current > 0) select(current - 1); });
+  nextBtn.addEventListener("click", () => { if (current < routes.length - 1) select(current + 1); });
 
   // 経路を探して表示する。表示できたら true
   async function search() {

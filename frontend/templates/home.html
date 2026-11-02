@@ -74,7 +74,21 @@
   .evac-panel .route-message { margin: 0 0 8px; font-size: 0.85rem; line-height: 1.4; }
   .evac-panel .route-actions { display: flex; gap: 8px; }
   .evac-panel .route-actions .button { height: 40px; margin-top: 0; font-size: 0.85rem; }
-  .evac-list { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+  /* 3件を横に並べ、左右にスワイプして切り替える（枠の影が切れないよう左右に3pxの余白を取る） */
+  .evac-slider { display: flex; align-items: center; gap: 4px; margin-top: 8px; }
+  .evac-slider[hidden] { display: none; }
+  .evac-arrow {
+    flex: none; width: 32px; height: 44px; padding: 0; font-family: inherit; font-size: 1.6rem; line-height: 1;
+    color: var(--blue); background: transparent; border: none; border-radius: 8px; cursor: pointer;
+  }
+  .evac-arrow:hover:not(:disabled) { background: var(--blue-light); }
+  .evac-arrow:disabled { color: #bbb; cursor: default; }
+  .evac-list {
+    position: relative; flex: 1; min-width: 0; list-style: none; margin: 0; padding: 3px; display: flex; gap: 8px;
+    overflow-x: auto; scroll-snap-type: x mandatory; scroll-padding-inline: 3px; scrollbar-width: none;
+  }
+  .evac-list::-webkit-scrollbar { display: none; }
+  .evac-list > li { flex: 0 0 100%; scroll-snap-align: start; }
   .evac-item {
     display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 10px; text-align: left;
     font-family: inherit; font-size: 0.9rem; color: inherit; background: #fff;
@@ -121,7 +135,11 @@
         <div class="route-actions" style="margin-top: 8px;">
           <button type="button" class="button button-secondary" id="evac-random">【テスト】ランダムな地点から探す</button>
         </div>
-        <ol class="evac-list" id="evac-list"></ol>
+        <div class="evac-slider" id="evac-slider" hidden>
+          <button type="button" class="evac-arrow" id="evac-prev" aria-label="前の避難場所">‹</button>
+          <ol class="evac-list" id="evac-list"></ol>
+          <button type="button" class="evac-arrow" id="evac-next" aria-label="次の避難場所">›</button>
+        </div>
       </div>
     </div>
   </div>
@@ -205,7 +223,7 @@
   function walkTimeText(distanceM) {
     if (!walkSpeed) return "";
     const minutes = Math.max(1, Math.round(distanceM / walkSpeed.speed_m_per_min));
-    return `（${walkSpeed.is_default ? "標準" : "あなた"}の速さで約 ${minutes} 分）`;
+    return `（約 ${minutes} 分）`;
   }
 
   function reset() {

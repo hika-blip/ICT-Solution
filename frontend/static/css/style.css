@@ -173,28 +173,6 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-/* ===== ホーム（ログイン後） ===== */
-.topbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 14px 20px;
-  background: var(--blue);
-  color: #fff;
-}
-.topbar form { margin: 0; }
-.topbar-name { font-weight: 700; font-size: 1.15rem; letter-spacing: 0.06em; }
-.topbar-logout {
-  padding: 6px 14px;
-  font-size: 0.9rem;
-  font-family: inherit;
-  color: var(--blue);
-  background: #fff;
-  border: none;
-  border-radius: 999px;
-  cursor: pointer;
-}
-
 /* ===== 地図のピン ===== */
 .map-pin-mode { cursor: crosshair; }
 .pin-icon span {

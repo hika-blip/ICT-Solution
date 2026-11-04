@@ -1,7 +1,6 @@
 {% extends "base.html" %}
 {% block title %}歩行ログ｜ひたふら{% endblock %}
 {% block content %}
-{% include "_menu.html" %}
 <main class="screen">
   <a href="/home" class="back-link">← ホームに戻る</a>
   <h2 class="screen-title">歩行ログ</h2>
@@ -33,7 +32,7 @@
     : `直近 ${speed.walks} 回の記録から計算しています。経路検索の所要時間に使われます。`));
 
   if (!walks.length) {
-    listEl.appendChild(el("li", "walk-empty", "まだ記録がありません。ホームの「記録開始」から記録できます。"));
+    listEl.appendChild(el("li", "walk-empty", "まだ記録がありません。ホームの右下の「記録」ボタンから記録できます。"));
     return;
   }
   for (const w of walks) {

@@ -14,6 +14,14 @@
     display: flex; flex-direction: column; align-items: flex-start; gap: 6px; pointer-events: none;
   }
   .map-top > * { max-width: 100%; pointer-events: auto; }  /* 長い案内文で画面の横幅を超えないようにする */
+  /* 1段目：平常時／緊急時の切り替えと、ピンの絞り込み */
+  .map-top-row { display: flex; align-items: center; gap: 8px; }
+  .pin-filter {
+    min-width: 0; height: 44px; padding: 0 10px; font-family: inherit; font-size: 0.85rem; font-weight: 700;
+    color: var(--text); background: #fff; border: none; border-radius: 22px;
+    box-shadow: 0 1px 6px rgba(0, 0, 0, 0.3); cursor: pointer;
+  }
+  .route-banner[hidden] { display: none; }
   .route-banner {
     display: flex; align-items: center; gap: 4px; min-height: 44px; padding: 6px 6px 6px 14px;
     background: #fff; border-radius: 22px; box-shadow: 0 1px 6px rgba(0, 0, 0, 0.3);
@@ -24,13 +32,15 @@
     background: transparent; border: none; border-radius: 50%; cursor: pointer;
   }
   .route-reset:hover { background: rgba(0, 0, 0, 0.06); }
+  /* 歩行の記録中・保存結果の表示（walklog.js） */
   .walk-badge {
-    padding: 4px 12px; font-family: inherit; font-size: 0.85rem; font-weight: 700; color: #fff;
-    background: #E8710A; border: none; border-radius: 999px; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3); cursor: pointer;
+    margin: 0; padding: 4px 12px; font-size: 0.85rem; font-weight: 700; color: #fff;
+    background: #E8710A; border-radius: 999px; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
   }
+  /* 右下のボタン（上から ピン・記録・現在地） */
   .map-fabs {
     position: absolute; right: 12px; bottom: 32px; z-index: 1050;
-    display: flex; flex-direction: column; gap: 10px;
+    display: flex; flex-direction: column; align-items: flex-end; gap: 10px;
   }
   .map-fab {
     min-width: 56px; height: 44px; padding: 0 14px; font-family: inherit; font-size: 0.9rem; font-weight: 700;
@@ -40,15 +50,14 @@
   .map-fab:hover { background: var(--blue-light); }
   .map-fab-pin { color: #fff; background: #2E9D4F; }
   .map-fab-pin:hover { background: #237A3D; }
-  /* 拡大・縮小ボタン：ピン・現在地ボタン（下から約130px）の上に置き、押しやすい大きさにする */
-  .leaflet-bottom.leaflet-right .leaflet-control-zoom {
-    margin: 0 12px 140px 0; border: none; border-radius: 12px; overflow: hidden;
-    box-shadow: 0 1px 6px rgba(0, 0, 0, 0.3);
+  .map-fab-walk.walk-recording { color: #fff; background: #E8710A; }
+  .map-fab-walk.walk-recording:hover { background: #C55F08; }
+  /* 現在地ボタン：丸いアイコン */
+  .map-fab-locate {
+    display: flex; align-items: center; justify-content: center;
+    width: 48px; min-width: 0; height: 48px; padding: 0; border-radius: 50%;
   }
-  .leaflet-control-zoom a.leaflet-control-zoom-in,
-  .leaflet-control-zoom a.leaflet-control-zoom-out {
-    width: 44px; height: 40px; line-height: 40px; font-size: 1.3rem; color: var(--text);
-  }
+  .map-fab-locate svg { width: 26px; height: 26px; }
   .current-status {
     max-width: 240px; padding: 4px 8px; font-size: 0.8rem;
     background: rgba(255, 255, 255, 0.9); border-radius: 6px;
@@ -102,27 +111,26 @@
   .evac-name { font-weight: 700; }
   .evac-detail { display: block; font-size: 0.82rem; color: #555; }
 </style>
-<!-- <header class="topbar">
-  <span class="topbar-name">ひたふら</span>
-  <form method="post" action="/logout">
-    <button type="submit" class="topbar-logout">ログアウト</button>
-  </form>
-</header> -->
 {% set map_tools = true %}
 {% include "_menu.html" %}
 <main class="screen screen-map">
   <div id="map"></div>
   <div class="map-top">
-    <div class="mode-tabs" role="tablist" aria-label="モード切り替え">
-      <button type="button" class="mode-tab" id="tab-normal" role="tab" aria-selected="true" aria-controls="panel-normal">平常時</button>
-      <button type="button" class="mode-tab mode-tab-emergency" id="tab-emergency" role="tab" aria-selected="false" aria-controls="panel-emergency">緊急時</button>
+    <div class="map-top-row">
+      <div class="mode-tabs" role="tablist" aria-label="モード切り替え">
+        <button type="button" class="mode-tab" id="tab-normal" role="tab" aria-selected="true" aria-controls="panel-normal">平常時</button>
+        <button type="button" class="mode-tab mode-tab-emergency" id="tab-emergency" role="tab" aria-selected="false" aria-controls="panel-emergency">緊急時</button>
+      </div>
+      <!-- ピンの絞り込み（pins.js がタグの選択肢を追加する） -->
+      <select class="pin-filter" id="pin-filter" aria-label="ピンをタグで絞り込み"><option value="">ピン：すべて</option></select>
     </div>
     <div class="map-panel" id="panel-normal" role="tabpanel" aria-labelledby="tab-normal">
-      <div class="route-banner">
-        <p class="route-message" id="message">地図をタップして出発地を選んでください。</p>
+      <!-- 経路の案内。表示する内容があるときだけ出す -->
+      <div class="route-banner" id="route-banner" hidden>
+        <p class="route-message" id="message"></p>
         <button type="button" class="route-reset" id="reset" aria-label="やり直す" title="やり直す" hidden>×</button>
       </div>
-      <button type="button" class="walk-badge" id="walk-badge" hidden></button>
+      <p class="walk-badge" id="walk-badge" role="status" hidden></p>
     </div>
     <div class="map-panel" id="panel-emergency" role="tabpanel" aria-labelledby="tab-emergency" hidden>
       <div class="evac-panel">
@@ -145,7 +153,14 @@
   </div>
   <div class="map-fabs">
     <button type="button" class="map-fab map-fab-pin" id="pin-add">ピン</button>
-    <button type="button" class="map-fab" id="locate">現在地</button>
+    <button type="button" class="map-fab map-fab-walk" id="walk-toggle" title="歩いた道を記録する">記録</button>
+    <button type="button" class="map-fab map-fab-locate" id="locate" aria-label="現在地" title="現在地">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="12" cy="12" r="7" fill="none" stroke="#1A73E8" stroke-width="2"/>
+        <circle cx="12" cy="12" r="3.2" fill="#1A73E8"/>
+        <path d="M12 1.5v3.5M12 19v3.5M1.5 12H5M19 12h3.5" stroke="#1A73E8" stroke-width="2" stroke-linecap="round"/>
+      </svg>
+    </button>
   </div>
 </main>
 <form class="pin-sheet" id="pin-sheet" hidden>
@@ -167,10 +182,8 @@
 </form>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script>
-  // 日立市付近を初期表示にする
-  // 拡大・縮小のボタンは左上だとメニューボタンと重なるので、右下（ピン・現在地の上）に出す
+  // 日立市付近を初期表示にする（拡大・縮小はピンチ操作・マウスホイールで行うので、＋－ボタンは出さない）
   const map = L.map("map", { zoomControl: false }).setView([36.5995, 140.651], 14);
-  L.control.zoom({ position: "bottomright", zoomInTitle: "拡大", zoomOutTitle: "縮小" }).addTo(map);
   L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
     maxZoom: 19,
     attribution: "&copy; OpenStreetMap contributors",
@@ -202,6 +215,7 @@
     new ResizeObserver(fitMinZoom).observe(document.getElementById("map"));
   });
 
+  const bannerEl = document.getElementById("route-banner");
   const messageEl = document.getElementById("message");
   const resetBtn = document.getElementById("reset");  // 案内文の「×」。経路を選んでいる最中だけ出す
   // 出発地・目的地は「地図上の地点」か「施設（駅・学校など）」のどちらか。
@@ -210,7 +224,12 @@
   let origFacility = null;
   let pendingFacility = null;  // 出発地より先に「ここへ行く」を押された施設
 
-  function setMessage(text) { messageEl.textContent = text; }
+  // 案内文を出す。空文字なら案内の枠ごと隠す（経路を選んでいる最中は「×」があるので枠を残す）
+  function setMessage(text) {
+    messageEl.textContent = text;
+    bannerEl.hidden = !text && resetBtn.hidden;
+  }
+  window.setRouteMessage = setMessage;  // pins.js からも使う
 
   // 自分の歩く速さ（歩行ログから計算。記録がなければ標準の速さ）。経路の所要時間に使う
   let walkSpeed = null;
@@ -231,7 +250,7 @@
     orig = dest = origMarker = destMarker = routeLine = null;
     origFacility = pendingFacility = null;
     resetBtn.hidden = true;
-    setMessage("地図をタップして出発地を選んでください。");
+    setMessage("");
   }
 
   function clearDestination() {

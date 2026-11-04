@@ -100,9 +100,7 @@
     window.pinMode = on;
     addBtn.textContent = on ? "やめる" : "ピン";
     document.getElementById("map").classList.toggle("map-pin-mode", on);
-    document.getElementById("message").textContent = on
-      ? "ピンを立てる場所を地図でタップしてください。"
-      : "地図をタップして出発地を選んでください。";
+    window.setRouteMessage(on ? "ピンを立てる場所を地図でタップしてください。" : "");  // home.html
     if (!on) closeSheet();
   }
 

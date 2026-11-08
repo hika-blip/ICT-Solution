@@ -163,6 +163,7 @@
       if (window.currentLocation) setOrigin(window.currentLocation);
     } else {
       clearAll();
+      window.clearHazardMap();  // 「やり直す」では消さないので clearAll には入れない（hazard.js）
     }
     setTimeout(() => map.invalidateSize(), 0);  // パネルの高さが変わるので地図の大きさを取り直す
   }

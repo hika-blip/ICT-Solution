@@ -1,11 +1,15 @@
 """避難場所・避難所への経路検索（現在地から近い順にトップ3）。
 
-日立市オープンデータ「指定避難場所」「指定避難所」（CC BY 4.0）の CSV を起動時に読み込む（DBには入れない）。
+避難先は DB（evacuation_sites）が正本で、管理画面（backend/admin.py）から追加・編集する。
+最初の読み込みとバックアップには、日立市オープンデータ「指定避難場所」「指定避難所」（CC BY 4.0）の CSV を使う：
   https://www.city.hitachi.lg.jp/opendata/datalist/1009216.html
   seeds/evacuation_sites.csv   指定避難場所（082023_evacuation_space2.csv）
   seeds/evacuation_shelters.csv 指定避難所（082023_evacuation_site2.csv を UTF-8 に変換したもの）
-  1行目: タイトル行、2行目: 見出し（No.,名称,住所,緯度,経度）、3行目以降: データ
+  1行目: タイトル行、2行目: 見出し（No.,名称,住所,緯度,経度[,非公開]）、3行目以降: データ
+  - 起動時に DB の避難先が空なら CSV から読み込む
+  - 管理画面の「CSVに書き出す」で DB → CSV、「CSVから読み込み直す」で CSV → DB
 両方に載っている施設（同じ座標）は1件にまとめ、kinds に両方の種別を入れる。
+非公開（hidden=1）の避難先は、経路検索の候補にしない。
 
 API:
   GET /api/evacuate/routes?lat=&lon=&count=3
@@ -17,24 +21,40 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 from . import auth, routing
-from .db import BASE_DIR
+from .db import BASE_DIR, connect
 
 router = APIRouter()
 
 SESSION_COOKIE = "session"   # main.py と同じ名前
 SEEDS_DIR = BASE_DIR / "seeds"
-# (ファイル名, 種別)。先に書いたほうの名前を、重複した施設の名前に使う
+# (ファイル名, 種別, DBの列, CSVのタイトル行, CSVの名称の列名)。先に書いたほうの名前を、重複した施設の名前に使う
 SOURCES = [
-    ("evacuation_sites.csv", "避難場所"),
-    ("evacuation_shelters.csv", "避難所"),
+    ("evacuation_sites.csv", "避難場所", "is_place", "指定避難場所", "指定避難場所"),
+    ("evacuation_shelters.csv", "避難所", "is_shelter", "指定避難所", "避難所"),
 ]
+KINDS = [kind for _, kind, *_ in SOURCES]
 
 DEFAULT_COUNT = 3
 MAX_COUNT = 10
 CANDIDATES = 10   # 直線距離で絞る候補数（全件の経路探索は重いため）
 
-# 避難先 [{"no", "name", "address", "lat", "lon", "kinds"}, ...]。起動時に読む
+# 公開中の避難先 [{"no", "name", "address", "lat", "lon", "kinds"}, ...]。DB から読んでおく
 _sites: list[dict] = []
+
+
+def _ensure_table(conn) -> None:
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS evacuation_sites (
+               id         INTEGER PRIMARY KEY AUTOINCREMENT,
+               name       TEXT NOT NULL,
+               address    TEXT NOT NULL DEFAULT '',
+               lat        REAL NOT NULL,
+               lon        REAL NOT NULL,
+               is_place   INTEGER NOT NULL DEFAULT 0,  -- 指定避難場所
+               is_shelter INTEGER NOT NULL DEFAULT 0,  -- 指定避難所
+               hidden     INTEGER NOT NULL DEFAULT 0   -- 1 なら経路検索の候補にしない
+           )"""
+    )
 
 
 def _read_sites(path, kind: str) -> list[dict]:
@@ -48,6 +68,7 @@ def _read_sites(path, kind: str) -> list[dict]:
         i_lat, i_lon = header.index("緯度"), header.index("経度")
     except ValueError:
         raise ValueError(f"{path.name}: 見出し行（No.,名称,住所,緯度,経度）が見つかりません")
+    i_hidden = header.index("非公開") if "非公開" in header else None
     i_name = i_no + 1
     sites = []
     for row in rows[2:]:
@@ -57,33 +78,85 @@ def _read_sites(path, kind: str) -> list[dict]:
             lat, lon = float(row[i_lat]), float(row[i_lon])
         except ValueError:
             continue  # 座標が無い行は候補にできない
+        hidden = i_hidden is not None and len(row) > i_hidden and row[i_hidden].strip() == "1"
         sites.append({
-            "no": row[i_no].strip(),
             "name": row[i_name].strip(),
             "address": row[i_addr].strip(),
             "lat": lat,
             "lon": lon,
-            "kinds": [kind],
+            "kind": kind,
+            "hidden": hidden,
         })
     return sites
 
 
-def load_sites() -> int:
-    """起動時に呼ぶ。CSV から避難先を読み込み、件数を返す（ファイルが無ければ飛ばす）。"""
-    _sites.clear()
-    by_point = {}
-    for name, kind in SOURCES:
+def import_from_csv() -> int:
+    """seeds/ の CSV の内容で DB の避難先を入れ替え、件数を返す（ファイルが無ければ飛ばす）。"""
+    by_point: dict = {}
+    for name, kind, column, *_ in SOURCES:
         path = SEEDS_DIR / name
         if not path.exists():
             continue
         for site in _read_sites(path, kind):
             key = (round(site["lat"], 6), round(site["lon"], 6))
-            if key in by_point:
-                if kind not in by_point[key]["kinds"]:
-                    by_point[key]["kinds"].append(kind)
-            else:
-                by_point[key] = site
-                _sites.append(site)
+            if key not in by_point:
+                by_point[key] = {**site, "is_place": 0, "is_shelter": 0}
+            by_point[key][column] = 1
+            by_point[key]["hidden"] = by_point[key]["hidden"] and site["hidden"]
+    with connect() as conn:
+        _ensure_table(conn)
+        conn.execute("DELETE FROM evacuation_sites")
+        conn.executemany(
+            """INSERT INTO evacuation_sites (name, address, lat, lon, is_place, is_shelter, hidden)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            [(s["name"], s["address"], s["lat"], s["lon"], s["is_place"], s["is_shelter"], 1 if s["hidden"] else 0)
+             for s in by_point.values()],
+        )
+    reload_sites()
+    return len(by_point)
+
+
+def export_to_csv() -> int:
+    """DB の避難先を seeds/ の2つの CSV（避難場所・避難所）に書き出し、件数を返す。"""
+    with connect() as conn:
+        rows = conn.execute("SELECT * FROM evacuation_sites ORDER BY id").fetchall()
+    SEEDS_DIR.mkdir(parents=True, exist_ok=True)
+    for name, kind, column, title, name_header in SOURCES:
+        with open(SEEDS_DIR / name, "w", encoding="utf-8", newline="") as f:
+            w = csv.writer(f, lineterminator="\n")
+            w.writerow([title, "", "", "", "", ""])
+            w.writerow(["No.", name_header, "住所", "緯度", "経度", "非公開"])
+            for no, r in enumerate([r for r in rows if r[column]], start=1):
+                w.writerow([no, r["name"], r["address"], f"{r['lat']:.6f}", f"{r['lon']:.6f}",
+                            "1" if r["hidden"] else ""])
+    return len(rows)
+
+
+def reload_sites() -> None:
+    """経路検索で使う避難先の一覧を DB から読み直す（管理画面で編集したあとにも呼ぶ）。"""
+    with connect() as conn:
+        rows = conn.execute("SELECT * FROM evacuation_sites WHERE hidden = 0 ORDER BY id").fetchall()
+    _sites.clear()
+    for r in rows:
+        _sites.append({
+            "no": str(r["id"]),
+            "name": r["name"],
+            "address": r["address"],
+            "lat": r["lat"],
+            "lon": r["lon"],
+            "kinds": [kind for _, kind, column, *_ in SOURCES if r[column]],
+        })
+
+
+def load_sites() -> int:
+    """起動時に呼ぶ。DB の避難先が空なら CSV から読み込み、公開中の件数を返す。"""
+    with connect() as conn:
+        _ensure_table(conn)
+        empty = conn.execute("SELECT COUNT(*) FROM evacuation_sites").fetchone()[0] == 0
+    if empty:
+        import_from_csv()
+    else:
+        reload_sites()
     return len(_sites)
 
 

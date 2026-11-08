@@ -13,7 +13,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from . import auth, evacuate, facilities, routing
+from . import admin, auth, evacuate, facilities, routing
 from .db import init_db
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -28,6 +28,7 @@ COOKIE_SECURE = os.getenv("COOKIE_SECURE") == "1"
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    admin.ensure_tables()
     facilities.load_seeds()
     routing.load_graph()
     evacuate.load_sites()
@@ -45,6 +46,7 @@ app.include_router(facilities.router)
 app.include_router(evacuate.router)
 from .walks import router as walks_router
 app.include_router(walks_router)
+app.include_router(admin.router)
 
 
 @app.middleware("http")

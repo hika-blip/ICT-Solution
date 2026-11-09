@@ -27,6 +27,17 @@
     background: #fff; border-radius: 22px; box-shadow: 0 1px 6px rgba(0, 0, 0, 0.3);
   }
   .route-message { margin: 0; font-size: 0.85rem; line-height: 1.4; }
+  #message { white-space: pre-line; }  /* 経路の案内は「経路の内容」「もう一方との比較」「計算に使った速さ」の3行 */
+  /* 通常／坂道考慮の切り替え（経路を表示しているときだけ） */
+  .route-modes[hidden] { display: none; }
+  .route-modes {
+    display: flex; overflow: hidden; background: #fff; border-radius: 22px; box-shadow: 0 1px 6px rgba(0, 0, 0, 0.3);
+  }
+  .route-mode {
+    min-height: 40px; padding: 0 16px; font-family: inherit; font-size: 0.85rem; font-weight: 700;
+    color: #555; background: #fff; border: 0; cursor: pointer;
+  }
+  .route-mode[aria-pressed="true"] { color: #fff; background: #2E6BB0; }
   .route-reset {
     flex: none; width: 32px; height: 32px; font-size: 1.2rem; line-height: 1; color: var(--muted);
     background: transparent; border: none; border-radius: 50%; cursor: pointer;
@@ -146,6 +157,11 @@
       <div class="route-banner" id="route-banner" hidden>
         <p class="route-message" id="message"></p>
         <button type="button" class="route-reset" id="reset" aria-label="やり直す" title="やり直す" hidden>×</button>
+      </div>
+      <!-- 経路の選び方の切り替え。経路を表示しているときだけ出す -->
+      <div class="route-modes" id="route-modes" role="group" aria-label="経路の選び方" hidden>
+        <button type="button" class="route-mode" data-mode="normal" aria-pressed="false">通常</button>
+        <button type="button" class="route-mode" data-mode="slope" aria-pressed="true">坂道考慮</button>
       </div>
       <p class="walk-badge" id="walk-badge" role="status" hidden></p>
     </div>
@@ -278,31 +294,28 @@
   }
   window.setRouteMessage = setMessage;  // pins.js からも使う
 
-  // 自分の歩く速さ（歩行ログから計算。記録がなければ標準の速さ）。経路の所要時間に使う
-  let walkSpeed = null;
-  function loadWalkSpeed() {
-    fetch("/api/walks/speed").then((r) => r.ok ? r.json() : null).then((s) => { walkSpeed = s; });
-  }
-  loadWalkSpeed();
-  document.addEventListener("walk-saved", loadWalkSpeed);  // walklog.js で記録を保存したとき
-
-  function walkTimeText(distanceM) {
-    if (!walkSpeed) return "";
-    const minutes = Math.max(1, Math.round(distanceM / walkSpeed.speed_m_per_min));
-    return `（約 ${minutes} 分）`;
+  // 経路の所要時間の表示。所要時間はサーバが自分の歩く速さ（歩行ログから計算）で出したもので、
+  // 坂道では遅くなる分を含む。経路も所要時間が一番短くなるように選ばれている
+  function walkTimeText(route) {
+    if (route.duration_min == null) return "";
+    const minutes = Math.max(1, Math.round(route.duration_min));
+    const slope = route.slope_m >= 1 ? `・うち坂道 約 ${Math.round(route.slope_m)} m` : "";
+    return `（約 ${minutes} 分${slope}）`;
   }
 
   function reset() {
     [origMarker, destMarker, routeLine].forEach((layer) => layer && map.removeLayer(layer));
-    orig = dest = origMarker = destMarker = routeLine = null;
+    orig = dest = origMarker = destMarker = routeLine = routeResult = null;
     origFacility = pendingFacility = null;
+    modesEl.hidden = true;
     resetBtn.hidden = true;
     setMessage("");
   }
 
   function clearDestination() {
     [destMarker, routeLine].forEach((layer) => layer && map.removeLayer(layer));
-    dest = destMarker = routeLine = null;
+    dest = destMarker = routeLine = routeResult = null;
+    modesEl.hidden = true;
   }
 
   function setOrig(latlng, facility = null) {
@@ -324,6 +337,103 @@
   function placeLabel(facility, point) {
     if (!facility) return "";
     return point && point.name ? `${facility.name}（${point.name}）` : facility.name;
+  }
+
+  // ---- 通常（距離が最短）／坂道考慮（所要時間が最短）の切り替え ----
+  // サーバは両方の経路を返すので、切り替えは再検索せずに描き直すだけ。選んだモードは端末に覚えておく
+  const MODE_KEY = "routeMode";
+  const modesEl = document.getElementById("route-modes");
+  const modeBtns = modesEl.querySelectorAll(".route-mode");
+  let routeMode = "slope";
+  try { if (localStorage.getItem(MODE_KEY) === "normal") routeMode = "normal"; } catch (e) { /* 既定のまま */ }
+  let routeResult = null;  // { data: /api/route/plan の結果, destFac }
+
+  function updateModeButtons() {
+    modeBtns.forEach((b) => b.setAttribute("aria-pressed", b.dataset.mode === routeMode ? "true" : "false"));
+  }
+  updateModeButtons();
+  modeBtns.forEach((b) => b.addEventListener("click", () => {
+    if (b.dataset.mode === routeMode) return;
+    routeMode = b.dataset.mode;
+    try { localStorage.setItem(MODE_KEY, routeMode); } catch (e) { /* 覚えられなくても切り替えはできる */ }
+    updateModeButtons();
+    if (routeResult) showRoute(false);
+  }));
+
+  // 2つの経路が同じか（入口の選び方と距離で判断する）
+  function sameRoute(a, b) {
+    return a.start.name === b.start.name && a.goal.name === b.goal.name && Math.abs(a.distance_m - b.distance_m) < 1;
+  }
+
+  // 選んでいないほうの経路との違いを1行で表す
+  function compareText(slope, normal) {
+    if (!slope.slope_aware) return "※地図データに標高が無いため、坂道を考慮できていません。";
+    if (sameRoute(slope, normal)) return "坂道を通っても一番早いため、通常と同じ経路です。";
+    const diff = Math.round(normal.duration_min - slope.duration_min);
+    const diffText = diff >= 1 ? `約 ${diff} 分` : "少し";
+    const lessSlope = Math.round(normal.slope_m - slope.slope_m);
+    if (routeMode === "slope") {
+      return `通常の経路より${diffText}早く着きます`
+        + (lessSlope >= 1 ? `（坂道が 約 ${lessSlope} m 少ない）。` : "。") + "灰色の点線は通常の経路です。";
+    }
+    return `坂道を考慮した経路なら${diffText}早く着きます（灰色の点線）。`;
+  }
+
+  // 計算に使った歩く速さ（歩行ログから計算。足りないところは標準・仮の値）
+  function speedsText(s) {
+    if (!s) return "";
+    const flat = `普通の道 ${walkFormat.speed(s.speed_m_per_min)}` + (s.is_default ? "（標準）" : "");
+    const slope = `坂道 ${walkFormat.speed(s.slope_speed_m_per_min)}` + (s.slope_is_default ? "（仮）" : "");
+    return `\n計算に使った速さ：${flat}・${slope}`;
+  }
+
+  // routeResult を routeMode に合わせて描く。fit が true なら両方の経路が収まるように地図を動かす
+  function showRoute(fit) {
+    const { data, destFac } = routeResult;
+    const normal = data.normal || data;
+    const route = routeMode === "normal" ? normal : data;
+    const other = routeMode === "normal" ? data : normal;
+    if (routeLine) map.removeLayer(routeLine);
+
+    const lines = [];
+    if (!sameRoute(route, other)) {
+      // もう一方の経路は、比べられるよう灰色の点線で下に敷く
+      lines.push(L.polyline(other.coords, { color: "#777", weight: 4, opacity: 0.8, dashArray: "4 8", interactive: false }));
+    }
+    lines.push(L.polyline(route.coords, { color: "#2E6BB0", weight: 6 }));
+    // 敷地内（校内など）の、地点と門の間は道の情報が無いので点線でつなぐ
+    const insideLeg = (from, to) => L.polyline([from, to],
+      { color: "#2E6BB0", weight: 4, dashArray: "6 8", interactive: false });
+
+    // 出発地が施設なら、実際に使う出口の位置へ印を動かす
+    let startLabel = "出発地";
+    const startGate = L.latLng(route.start.lat, route.start.lon);
+    if (origFacility) {
+      startLabel = placeLabel(origFacility, route.start);
+      origMarker.setLatLng(startGate).setTooltipContent(`出発：${startLabel}`);
+    } else if (data.orig_facility && data.orig_facility.inside) {
+      // 出発地が敷地の中 → 一番近くなる門から出る
+      startLabel = `出発地（${data.orig_facility.name}内）→ ${route.start.name || "入口"}`;
+      lines.push(insideLeg(orig, startGate));
+    }
+    let goalLabel = "目的地";
+    const goalGate = L.latLng(route.goal.lat, route.goal.lon);
+    if (destFac) {
+      goalLabel = placeLabel(destFac, route.goal);
+      if (destMarker) map.removeLayer(destMarker);
+      dest = goalGate;
+      destMarker = L.marker(dest).addTo(map).bindTooltip(goalLabel, { permanent: true });
+    } else if (data.dest_facility && data.dest_facility.inside) {
+      // 目的地が敷地の中 → 一番近くなる門から入る
+      goalLabel = `${route.goal.name || "入口"} → 目的地（${data.dest_facility.name}内）`;
+      lines.push(insideLeg(goalGate, dest));
+    }
+    routeLine = L.featureGroup(lines).addTo(map);
+    if (fit) map.fitBounds(routeLine.getBounds(), { padding: [30, 30] });
+    modesEl.hidden = false;
+    const modeName = routeMode === "normal" ? "通常" : "坂道考慮";
+    setMessage(`【${modeName}】${startLabel} → ${goalLabel}　約 ${Math.round(route.distance_m)} m${walkTimeText(route)}\n`
+      + compareText(data, normal) + speedsText(data.speeds));
   }
 
   // 経路を探して表示する。目的地は destFac（施設）か destLatLng（地点）のどちらか
@@ -350,37 +460,8 @@
         setMessage((data.error || "経路を取得できませんでした。") + " 目的地を選び直してください。");
         return;
       }
-      const lines = [L.polyline(data.coords, { color: "#2E6BB0", weight: 6 })];
-      // 敷地内（校内など）の、地点と門の間は道の情報が無いので点線でつなぐ
-      const insideLeg = (from, to) => L.polyline([from, to],
-        { color: "#2E6BB0", weight: 4, dashArray: "6 8", interactive: false });
-
-      // 出発地が施設なら、実際に使う出口の位置へ印を動かす
-      let startLabel = "出発地";
-      const startGate = L.latLng(data.start.lat, data.start.lon);
-      if (origFacility) {
-        startLabel = placeLabel(origFacility, data.start);
-        origMarker.setLatLng(startGate).setTooltipContent(`出発：${startLabel}`);
-      } else if (data.orig_facility && data.orig_facility.inside) {
-        // 出発地が敷地の中 → 一番近くなる門から出る
-        startLabel = `出発地（${data.orig_facility.name}内）→ ${data.start.name || "入口"}`;
-        lines.push(insideLeg(orig, startGate));
-      }
-      let goalLabel = "目的地";
-      const goalGate = L.latLng(data.goal.lat, data.goal.lon);
-      if (destFac) {
-        goalLabel = placeLabel(destFac, data.goal);
-        if (destMarker) map.removeLayer(destMarker);
-        dest = goalGate;
-        destMarker = L.marker(dest).addTo(map).bindTooltip(goalLabel, { permanent: true });
-      } else if (data.dest_facility && data.dest_facility.inside) {
-        // 目的地が敷地の中 → 一番近くなる門から入る
-        goalLabel = `${data.goal.name || "入口"} → 目的地（${data.dest_facility.name}内）`;
-        lines.push(insideLeg(goalGate, dest));
-      }
-      routeLine = L.featureGroup(lines).addTo(map);
-      map.fitBounds(routeLine.getBounds(), { padding: [30, 30] });
-      setMessage(`${startLabel} → ${goalLabel}　約 ${Math.round(data.distance_m)} m${walkTimeText(data.distance_m)}`);
+      routeResult = { data, destFac };
+      showRoute(true);
     } catch (e) {
       clearDestination();
       setMessage("通信に失敗しました。");

@@ -79,7 +79,7 @@
     r.marker.openTooltip();
     listEl.scrollTo({ left: slideLeft(index), behavior: "smooth" });  // 地図側で選んだときも一覧をそのカードへ
     const d = r.data;
-    setMessage(`${d.site.name} へ約 ${Math.round(d.distance_m)} m${walkTimeText(d.distance_m)}`);
+    setMessage(`${d.site.name} へ約 ${Math.round(d.distance_m)} m${walkTimeText(d)}`);
   }
 
   function showRoutes(list) {
@@ -99,7 +99,7 @@
       name.textContent = data.site.name;
       const detail = document.createElement("span");
       detail.className = "evac-detail";
-      detail.textContent = `${data.site.kinds.join("・")}　約 ${Math.round(data.distance_m)} m${walkTimeText(data.distance_m)}`;
+      detail.textContent = `${data.site.kinds.join("・")}　約 ${Math.round(data.distance_m)} m${walkTimeText(data)}`;
       const text = document.createElement("span");
       text.append(name, detail);
 

@@ -2,7 +2,7 @@
 
   POST   /api/walks        記録を保存（記録中の点をまとめて受け取る）
   GET    /api/walks        自分の記録一覧（新しい順）
-  GET    /api/walks/speed  自分の歩く速さ [m/分]（記録が足りなければ標準の速さ）
+  GET    /api/walks/speed  自分の歩く速さ [m/分]（記録が足りなければ標準の速さ）と坂道での速さ
   GET    /api/walks/{id}   記録のまとめと点の座標
   DELETE /api/walks/{id}   自分の記録を削除
   GET    /walks            一覧の画面
@@ -20,7 +20,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
-from . import auth
+from . import auth, routing
 from .db import connect
 
 router = APIRouter()
@@ -36,6 +36,8 @@ JUMP_SPEED = 5.0             # これより速い区間は測位の飛びとみ�
 DEFAULT_SPEED = 80.0         # 記録がないときの標準の歩く速さ [m/分]（不動産の徒歩表示と同じ）
 SPEED_RECENT = 10            # 歩く速さの計算に使う直近の記録の件数
 SPEED_MIN_DISTANCE = 200     # これより短い記録は歩く速さの計算に使わない [m]
+# 坂道での速さの実測値が無いときに、普通の道の速さに掛ける割合（仮の値。坂道の判定は routing.SLOPE_GRADE）
+SLOPE_SPEED_RATIO = 0.5
 
 
 def _user(request: Request):
@@ -155,8 +157,22 @@ def list_walks(request: Request):
     return [_summary(r) for r in rows]
 
 
+def measured_slope_speed(user_id: int) -> float | None:
+    """坂道での歩く速さ [m/分] の実測値。測ったデータが無ければ None。
+
+    坂道での速さを測る機能はまだ無いので、いまは常に None を返す
+    （呼び出し側は「普通の道の速さ × SLOPE_SPEED_RATIO」を使う）。
+    測る機能を作ったら、ここで記録から計算して返す。
+    """
+    return None
+
+
 def my_speed(user_id: int) -> dict:
-    """直近の記録から歩く速さ [m/分] を求める。記録が足りなければ標準の速さ。"""
+    """直近の記録から歩く速さ [m/分] を求める。記録が足りなければ標準の速さ。
+
+    坂道での速さ（slope_speed_m_per_min）は、実測値があればそれ、無ければ
+    普通の道の速さ × SLOPE_SPEED_RATIO（slope_is_default=True）。
+    """
     with connect() as conn:
         row = conn.execute(
             "SELECT COUNT(*) AS n, SUM(distance_m) AS d, SUM(moving_s) AS s FROM ("
@@ -166,8 +182,23 @@ def my_speed(user_id: int) -> dict:
             (user_id, SPEED_MIN_DISTANCE, SPEED_RECENT),
         ).fetchone()
     if not row["n"]:
-        return {"speed_m_per_min": DEFAULT_SPEED, "is_default": True, "walks": 0}
-    return {"speed_m_per_min": row["d"] / row["s"] * 60, "is_default": False, "walks": row["n"]}
+        result = {"speed_m_per_min": DEFAULT_SPEED, "is_default": True, "walks": 0}
+    else:
+        result = {"speed_m_per_min": row["d"] / row["s"] * 60, "is_default": False, "walks": row["n"]}
+    slope = measured_slope_speed(user_id)
+    result["slope_is_default"] = slope is None
+    result["slope_speed_m_per_min"] = slope if slope is not None else result["speed_m_per_min"] * SLOPE_SPEED_RATIO
+    return result
+
+
+def speeds_from(info: dict) -> routing.WalkSpeeds:
+    """my_speed の結果から、経路検索に使う歩く速さ（普通の道・坂道）を作る。"""
+    return routing.WalkSpeeds(flat=info["speed_m_per_min"], slope=info["slope_speed_m_per_min"])
+
+
+def route_speeds(user_id: int) -> routing.WalkSpeeds:
+    """経路検索に使う歩く速さ（普通の道・坂道）。"""
+    return speeds_from(my_speed(user_id))
 
 
 @router.get("/api/walks/speed")

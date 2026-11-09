@@ -13,7 +13,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from . import admin, auth, evacuate, facilities, routing
+from . import admin, auth, evacuate, facilities, routing, walks
 from .db import init_db
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -168,10 +168,11 @@ def home(request: Request):
 
 @app.get("/api/route")
 def api_route(request: Request, orig_lat: float, orig_lon: float, dest_lat: float, dest_lon: float):
-    if current_user(request) is None:
+    user = current_user(request)
+    if user is None:
         return JSONResponse({"error": "ログインが必要です"}, status_code=401)
     try:
-        return routing.find_route((orig_lat, orig_lon), (dest_lat, dest_lon))
+        return routing.find_route((orig_lat, orig_lon), (dest_lat, dest_lon), walks.route_speeds(user["id"]))
     except routing.RouteError as e:
         return JSONResponse({"error": str(e)}, status_code=503)
 

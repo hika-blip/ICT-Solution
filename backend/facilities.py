@@ -19,6 +19,9 @@ API:
   GET /api/route/plan                 経路検索。出発地・目的地のそれぞれに地点か施設を指定できる
                                       （施設のとき・敷地内の地点のときは、入口の組み合わせのうち
                                         一番近いものを使う）
+                                      返すのは坂道考慮（所要時間が最短）の経路で、
+                                      "normal" に通常（距離が最短）の経路も入れる。
+                                      "speeds" は計算に使った歩く速さ（walks.my_speed の結果）
 """
 import csv
 from typing import Optional
@@ -313,7 +316,12 @@ def route_plan(
     if orig_info and dest_info and orig_info["id"] == dest_info["id"]:
         return JSONResponse({"error": f"出発地と目的地が同じ施設（{orig_info['name']}）の中です"}, status_code=400)
     try:
-        result = routing.find_route_between(starts, goals, walks.route_speeds(user["id"]))
+        speed_info = walks.my_speed(user["id"])
+        speeds = walks.speeds_from(speed_info)
+        result = routing.find_route_between(starts, goals, speeds, "time")
+        result["speeds"] = speed_info  # 計算に使った速さ（画面に表示する）
+        # 比べて見せるための、距離が一番短い経路（通常モード）。時間は坂道で遅くなる分を含む
+        result["normal"] = routing.find_route_between(starts, goals, speeds, "distance")
     except routing.RouteError as e:
         return JSONResponse({"error": str(e)}, status_code=503)
     result["orig_facility"] = orig_info

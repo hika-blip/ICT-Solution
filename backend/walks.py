@@ -191,10 +191,14 @@ def my_speed(user_id: int) -> dict:
     return result
 
 
+def speeds_from(info: dict) -> routing.WalkSpeeds:
+    """my_speed の結果から、経路検索に使う歩く速さ（普通の道・坂道）を作る。"""
+    return routing.WalkSpeeds(flat=info["speed_m_per_min"], slope=info["slope_speed_m_per_min"])
+
+
 def route_speeds(user_id: int) -> routing.WalkSpeeds:
     """経路検索に使う歩く速さ（普通の道・坂道）。"""
-    s = my_speed(user_id)
-    return routing.WalkSpeeds(flat=s["speed_m_per_min"], slope=s["slope_speed_m_per_min"])
+    return speeds_from(my_speed(user_id))
 
 
 @router.get("/api/walks/speed")

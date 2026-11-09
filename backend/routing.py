@@ -100,25 +100,30 @@ def _edge_minutes(data: dict, speeds: WalkSpeeds) -> float:
     return (data["length"] - slope) / speeds.flat + slope / speeds.slope
 
 
-def _best_edge(u: int, v: int, speeds: WalkSpeeds) -> dict:
-    """u→v の並行する辺のうち、一番早く歩ける辺。"""
-    return min(_graph[u][v].values(), key=lambda d: _edge_minutes(d, speeds))
+def _edge_cost(data: dict, speeds: WalkSpeeds, minimize: str) -> float:
+    """経路探索で比べる辺の重み。minimize="time" なら時間[分]、"distance" なら距離[m]。"""
+    return _edge_minutes(data, speeds) if minimize == "time" else data["length"]
 
 
-def _shortest_time_path(source: int, target: int, speeds: WalkSpeeds) -> list[int] | None:
-    """所要時間が一番短い経路のノード列（A*法）。たどり着けなければ None。
+def _best_edge(u: int, v: int, speeds: WalkSpeeds, minimize: str) -> dict:
+    """u→v の並行する辺のうち、重みが一番小さい辺。"""
+    return min(_graph[u][v].values(), key=lambda d: _edge_cost(d, speeds, minimize))
 
-    目安（ヒューリスティック）は「目的地までの直線距離 ÷ 速いほうの速さ」。
-    実際の時間を超えないので、最短時間の経路が必ず見つかる。
+
+def _shortest_path(source: int, target: int, speeds: WalkSpeeds, minimize: str) -> list[int] | None:
+    """重み（時間か距離）が一番小さい経路のノード列（A*法）。たどり着けなければ None。
+
+    目安（ヒューリスティック）は目的地までの直線距離（時間のときは「÷ 速いほうの速さ」）。
+    実際の重みを超えないので、最短の経路が必ず見つかる。
     """
     ty, tx = _graph.nodes[target]["y"], _graph.nodes[target]["x"]
-    fastest = max(speeds.flat, speeds.slope)
+    scale = 1 / max(speeds.flat, speeds.slope) if minimize == "time" else 1.0
 
     def heuristic(n, _target):
-        return osm.haversine(_graph.nodes[n]["y"], _graph.nodes[n]["x"], ty, tx) / fastest
+        return osm.haversine(_graph.nodes[n]["y"], _graph.nodes[n]["x"], ty, tx) * scale
 
     def weight(_u, _v, edges):
-        return min(_edge_minutes(d, speeds) for d in edges.values())
+        return min(_edge_cost(d, speeds, minimize) for d in edges.values())
 
     try:
         return nx.astar_path(_graph, source, target, heuristic=heuristic, weight=weight)
@@ -139,12 +144,15 @@ def _edge_coords(u: int, v: int, data: dict) -> list[list[float]]:
     return pts
 
 
-def _path_result(source: int, path: list[int], speeds: WalkSpeeds) -> dict:
-    """ノードの列から、地図に描く座標の列・距離・坂道の長さ・所要時間を作る。"""
+def _path_result(source: int, path: list[int], speeds: WalkSpeeds, minimize: str) -> dict:
+    """ノードの列から、地図に描く座標の列・距離・坂道の長さ・所要時間を作る。
+
+    所要時間は、距離で選んだ経路でも坂道で遅くなる分を含めて計算する。
+    """
     coords = [[_graph.nodes[source]["y"], _graph.nodes[source]["x"]]]
     distance = slope = minutes = 0.0
     for u, v in zip(path, path[1:]):
-        data = _best_edge(u, v, speeds)
+        data = _best_edge(u, v, speeds, minimize)
         coords.extend(_edge_coords(u, v, data)[1:])
         distance += data["length"]
         slope += min(data["slope_m"], data["length"])
@@ -163,12 +171,17 @@ def straight_m(a: tuple[float, float], b: tuple[float, float]) -> float:
     return osm.haversine(*a, *b)
 
 
-def find_route_between(starts: list[tuple], goals: list[tuple], speeds: WalkSpeeds) -> dict:
-    """出発候補と目的候補（施設の入口など）の組み合わせのうち、所要時間が一番短い経路を返す。
+MINIMIZE_KEYS = {"time": "duration_min", "distance": "distance_m"}
+
+
+def find_route_between(starts: list[tuple], goals: list[tuple], speeds: WalkSpeeds,
+                       minimize: str = "time") -> dict:
+    """出発候補と目的候補（施設の入口など）の組み合わせのうち、一番早い（短い）経路を返す。
 
     starts, goals: [(名前, (緯度, 経度)), ...] または [(名前, (緯度, 経度), 追加距離[m]), ...]
       ※追加距離は、道の外（敷地内など）を歩く分。平らな道として時間に足し、合計の距離にも足す
     speeds: 利用者の歩く速さ（普通の道・坂道）
+    minimize: "time"（坂道考慮：所要時間が一番短い）か "distance"（通常：距離が一番短い）
     戻り値: {"coords": [...], "distance_m": 合計距離[m], "slope_m": 坂道の長さ[m],
              "duration_min": 所要時間[分], "slope_aware": bool,
              "start": {"name", "lat", "lon", "extra_m"}, "goal": {"name", "lat", "lon", "extra_m"}}
@@ -189,6 +202,7 @@ def find_route_between(starts: list[tuple], goals: list[tuple], speeds: WalkSpee
             raise RouteError(f"{label}が地図データの範囲外です（青い枠の中を選んでください）")
         return snapped
 
+    key = MINIMIZE_KEYS[minimize]
     sources = snap_all(starts, "出発地")
     targets = snap_all(goals, "目的地")
     best = None
@@ -198,13 +212,13 @@ def find_route_between(starts: list[tuple], goals: list[tuple], speeds: WalkSpee
             if source == target:
                 too_close = True
                 continue
-            path = _shortest_time_path(source, target, speeds)
+            path = _shortest_path(source, target, speeds, minimize)
             if path is None:
                 continue
-            result = _path_result(source, path, speeds)
+            result = _path_result(source, path, speeds, minimize)
             result["distance_m"] += s_extra + g_extra
             result["duration_min"] += (s_extra + g_extra) / speeds.flat
-            if best is None or result["duration_min"] < best["duration_min"]:
+            if best is None or result[key] < best[key]:
                 result["start"] = {"name": s_name, "lat": s_point[0], "lon": s_point[1], "extra_m": s_extra}
                 result["goal"] = {"name": g_name, "lat": g_point[0], "lon": g_point[1], "extra_m": g_extra}
                 best = result
@@ -233,7 +247,7 @@ def find_route(orig: tuple[float, float], dest: tuple[float, float], speeds: Wal
     target = _snap(dest, "目的地")
     if source == target:
         raise RouteError("出発地と目的地が近すぎます。離れた場所を選んでください")
-    path = _shortest_time_path(source, target, speeds)
+    path = _shortest_path(source, target, speeds, "time")
     if path is None:
         raise RouteError("経路が見つかりません")
-    return _path_result(source, path, speeds)
+    return _path_result(source, path, speeds, "time")

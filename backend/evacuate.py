@@ -13,14 +13,15 @@
 
 API:
   GET /api/evacuate/routes?lat=&lon=&count=3
-      現在地から、道のりが短い順に避難先への経路を最大 count 件（既定3）返す。
+      現在地から、所要時間が短い順に避難先への経路を最大 count 件（既定3）返す。
+      所要時間はログイン中の利用者の歩く速さ（坂道では遅くなる）で計算する。
 """
 import csv
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
-from . import auth, routing
+from . import auth, routing, walks
 from .db import BASE_DIR, connect
 
 router = APIRouter()
@@ -160,10 +161,10 @@ def load_sites() -> int:
     return len(_sites)
 
 
-def top_routes(orig: tuple[float, float], count: int = DEFAULT_COUNT) -> list[dict]:
-    """現在地から道のりが短い順に、避難場所への経路を最大 count 件返す。
+def top_routes(orig: tuple[float, float], speeds: routing.WalkSpeeds, count: int = DEFAULT_COUNT) -> list[dict]:
+    """現在地から所要時間が短い順に、避難場所への経路を最大 count 件返す。
 
-    直線距離が近い CANDIDATES 件に絞ってから経路探索し、道のりで並べ替える。
+    直線距離が近い CANDIDATES 件に絞ってから経路探索し、所要時間（坂道で遅くなる分を含む）で並べ替える。
     戻り値の各要素: routing.find_route の結果 + {"site": {"no", "name", "address", "lat", "lon", "kinds"}}
     """
     if not _sites:
@@ -173,7 +174,7 @@ def top_routes(orig: tuple[float, float], count: int = DEFAULT_COUNT) -> list[di
     error = None
     for site in nearest[:max(CANDIDATES, count)]:
         try:
-            route = routing.find_route(orig, (site["lat"], site["lon"]))
+            route = routing.find_route(orig, (site["lat"], site["lon"]), speeds)
         except routing.RouteError as e:
             error = e  # 範囲外・近すぎ・経路なしの避難場所は候補から外す
             continue
@@ -181,17 +182,18 @@ def top_routes(orig: tuple[float, float], count: int = DEFAULT_COUNT) -> list[di
         results.append(route)
     if not results:
         raise error or routing.RouteError("避難先までの経路が見つかりません")
-    results.sort(key=lambda r: r["distance_m"])
+    results.sort(key=lambda r: r["duration_min"])
     return results[:count]
 
 
 @router.get("/api/evacuate/routes")
 def evacuate_routes(request: Request, lat: float, lon: float, count: int = DEFAULT_COUNT):
-    if auth.get_user_by_session(request.cookies.get(SESSION_COOKIE)) is None:
+    user = auth.get_user_by_session(request.cookies.get(SESSION_COOKIE))
+    if user is None:
         return JSONResponse({"error": "ログインが必要です"}, status_code=401)
     if not 1 <= count <= MAX_COUNT:
         return JSONResponse({"error": f"count は1〜{MAX_COUNT}で指定してください"}, status_code=400)
     try:
-        return {"routes": top_routes((lat, lon), count)}
+        return {"routes": top_routes((lat, lon), walks.route_speeds(user["id"]), count)}
     except routing.RouteError as e:
         return JSONResponse({"error": str(e)}, status_code=503)

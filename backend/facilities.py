@@ -26,7 +26,7 @@ from typing import Optional
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
-from . import auth, routing
+from . import auth, routing, walks
 from .db import BASE_DIR, connect
 
 router = APIRouter()
@@ -299,7 +299,8 @@ def route_plan(
     dest_lat: Optional[float] = None,
     dest_lon: Optional[float] = None,
 ):
-    if not _logged_in(request):
+    user = auth.get_user_by_session(request.cookies.get(SESSION_COOKIE))
+    if user is None:
         return JSONResponse({"error": "ログインが必要です"}, status_code=401)
     if orig_facility and orig_facility == dest_facility:
         return JSONResponse({"error": "出発地と目的地が同じ施設です"}, status_code=400)
@@ -312,7 +313,7 @@ def route_plan(
     if orig_info and dest_info and orig_info["id"] == dest_info["id"]:
         return JSONResponse({"error": f"出発地と目的地が同じ施設（{orig_info['name']}）の中です"}, status_code=400)
     try:
-        result = routing.find_route_between(starts, goals)
+        result = routing.find_route_between(starts, goals, walks.route_speeds(user["id"]))
     except routing.RouteError as e:
         return JSONResponse({"error": str(e)}, status_code=503)
     result["orig_facility"] = orig_info

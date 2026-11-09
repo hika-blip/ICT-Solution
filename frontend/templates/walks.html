@@ -30,6 +30,9 @@
   speedEl.append(el("small", "", speed.is_default
     ? "まだ記録が足りないため、標準の速さです。200 m 以上歩いて記録すると、あなたの速さになります。"
     : `直近 ${speed.walks} 回の記録から計算しています。経路検索の所要時間に使われます。`));
+  speedEl.append(el("small", "", `坂道での速さ：${walkFormat.speed(speed.slope_speed_m_per_min)}`
+    + (speed.slope_is_default ? "（まだ測っていないため、ふだんの速さから決めた仮の値）。" : "。")
+    + "経路検索では、坂道で遅くなる分を含めて一番早く着く道を案内します。"));
 
   if (!walks.length) {
     listEl.appendChild(el("li", "walk-empty", "まだ記録がありません。ホームの右下の「記録」ボタンから記録できます。"));

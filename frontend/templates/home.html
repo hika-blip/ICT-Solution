@@ -252,18 +252,13 @@
   }
   window.setRouteMessage = setMessage;  // pins.js からも使う
 
-  // 自分の歩く速さ（歩行ログから計算。記録がなければ標準の速さ）。経路の所要時間に使う
-  let walkSpeed = null;
-  function loadWalkSpeed() {
-    fetch("/api/walks/speed").then((r) => r.ok ? r.json() : null).then((s) => { walkSpeed = s; });
-  }
-  loadWalkSpeed();
-  document.addEventListener("walk-saved", loadWalkSpeed);  // walklog.js で記録を保存したとき
-
-  function walkTimeText(distanceM) {
-    if (!walkSpeed) return "";
-    const minutes = Math.max(1, Math.round(distanceM / walkSpeed.speed_m_per_min));
-    return `（約 ${minutes} 分）`;
+  // 経路の所要時間の表示。所要時間はサーバが自分の歩く速さ（歩行ログから計算）で出したもので、
+  // 坂道では遅くなる分を含む。経路も所要時間が一番短くなるように選ばれている
+  function walkTimeText(route) {
+    if (route.duration_min == null) return "";
+    const minutes = Math.max(1, Math.round(route.duration_min));
+    const slope = route.slope_m >= 1 ? `・うち坂道 約 ${Math.round(route.slope_m)} m` : "";
+    return `（約 ${minutes} 分${slope}）`;
   }
 
   function reset() {
@@ -354,7 +349,7 @@
       }
       routeLine = L.featureGroup(lines).addTo(map);
       map.fitBounds(routeLine.getBounds(), { padding: [30, 30] });
-      setMessage(`${startLabel} → ${goalLabel}　約 ${Math.round(data.distance_m)} m${walkTimeText(data.distance_m)}`);
+      setMessage(`${startLabel} → ${goalLabel}　約 ${Math.round(data.distance_m)} m${walkTimeText(data)}`);
     } catch (e) {
       clearDestination();
       setMessage("通信に失敗しました。");

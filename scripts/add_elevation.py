@@ -1,8 +1,7 @@
 """経路検索用の地図データ（data/map.graphml）に標高を書き込む。
 
-坂道を考慮した経路検索に使う。標高は国土地理院の標高タイル（PNG形式）から取る：
-  https://maps.gsi.go.jp/development/demtile.html
-  DEM5A（5mメッシュ・航空レーザ測量）→ 無い場所は DEM5B → それも無い場所は DEM10B（10mメッシュ）
+坂道を考慮した経路検索に使う。標高は国土地理院の標高タイルから取る（backend/elevation.py）。
+取得したタイルは data/dem_tiles/ に保存され、歩行ログの坂道の判定にも使われる。
 
 書き込むもの:
   ノード  elevation     交差点などの標高[m]
@@ -15,70 +14,19 @@
 data/map.graphml を作り直したときは、もう一度実行する。実行後はサーバを再起動する。
 """
 import argparse
-import io
 import math
 import sys
 from pathlib import Path
 
-import numpy as np
 import osmnx as ox
-import requests
-from PIL import Image
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 import osm_to_network as osm  # noqa: E402
+from backend.elevation import SAMPLE_STEP_M, DemTiles, ElevationUnavailable  # noqa: E402
 
 DEFAULT_GRAPH = ROOT / "data" / "map.graphml"
-SAMPLE_STEP_M = 20.0   # 道に沿って標高を測る間隔[m]（標高タイルの誤差で傾きがぶれないよう、細かくしすぎない）
-# (タイルの種類, ズームレベル)。上から順に使い、標高が無い（海・未整備）ところは次を使う
-SOURCES = [("dem5a_png", 15), ("dem5b_png", 15), ("dem_png", 14)]
-TILE_URL = "https://cyberjapandata.gsi.go.jp/xyz/{name}/{z}/{x}/{y}.png"
-TILE_SIZE = 256
-
-
-class DemTiles:
-    """標高タイルを取得して、緯度経度から標高を引く（取得したタイルは覚えておく）。"""
-
-    def __init__(self):
-        self._tiles = {}
-        self._session = requests.Session()
-        self._session.headers["User-Agent"] = "hitafura-route-elevation/1.0"
-
-    def _tile(self, name: str, z: int, x: int, y: int):
-        key = (name, z, x, y)
-        if key not in self._tiles:
-            res = self._session.get(TILE_URL.format(name=name, z=z, x=x, y=y), timeout=30)
-            if res.status_code == 404:  # その範囲のデータが無い
-                self._tiles[key] = None
-            else:
-                res.raise_for_status()
-                rgb = np.asarray(Image.open(io.BytesIO(res.content)).convert("RGB"), dtype=np.int64)
-                v = rgb[:, :, 0] * 65536 + rgb[:, :, 1] * 256 + rgb[:, :, 2]
-                h = np.where(v < 2 ** 23, v, v - 2 ** 24) * 0.01
-                h = np.where(v == 2 ** 23, np.nan, h)  # 2^23 は「標高なし」
-                self._tiles[key] = h
-        return self._tiles[key]
-
-    def elevation(self, lat: float, lon: float) -> float | None:
-        for name, z in SOURCES:
-            n = 2 ** z * TILE_SIZE
-            px = (lon + 180) / 360 * n
-            r = math.radians(lat)
-            py = (1 - math.log(math.tan(r) + 1 / math.cos(r)) / math.pi) / 2 * n
-            tx, ty = int(px // TILE_SIZE), int(py // TILE_SIZE)
-            tile = self._tile(name, z, tx, ty)
-            if tile is None:
-                continue
-            h = tile[int(py) % TILE_SIZE, int(px) % TILE_SIZE]
-            if not np.isnan(h):
-                return float(h)
-        return None
-
-    @property
-    def tile_count(self) -> int:
-        return len(self._tiles)
 
 
 def edge_points(G, u, v, data) -> list[tuple[float, float]]:
@@ -127,7 +75,17 @@ def main():
     osm.prefer_ipv4()
     G = ox.load_graphml(args.graphml)
     dem = DemTiles()
+    try:
+        add_elevations(G, dem)
+    except ElevationUnavailable as e:
+        sys.exit(f"{e}\nインターネット接続を確認して、もう一度実行してください（取得済みのタイルは data/dem_tiles/ に残ります）。")
+    ox.save_graphml(G, args.graphml)
+    print(f"保存しました: {args.graphml}（使ったタイル {dem.tile_count} 枚）")
+    print("サーバを再起動すると、坂道を考慮した経路検索になります。")
 
+
+def add_elevations(G, dem: DemTiles) -> None:
+    """G のノードに elevation、辺に elev_profile を書き込む。"""
     print(f"ノード {G.number_of_nodes()} 件の標高を取得しています…")
     missing_nodes = 0
     for n, d in G.nodes(data=True):
@@ -155,11 +113,8 @@ def main():
                 profile = [hu, hv]  # 途中が測れないときは両端だけで傾きを見る
         d["elev_profile"] = ",".join(f"{h:.2f}" for h in profile)
 
-    ox.save_graphml(G, args.graphml)
-    print(f"保存しました: {args.graphml}（取得したタイル {dem.tile_count} 枚）")
     if missing_nodes:
         print(f"※ 標高を取れなかったノード {missing_nodes} 件・辺 {missing_edges} 件は、平らな道として扱います。")
-    print("サーバを再起動すると、坂道を考慮した経路検索になります。")
 
 
 if __name__ == "__main__":

@@ -37,12 +37,20 @@
     .addTo(map).bindTooltip("ゴール");
   map.fitBounds(line.getBounds(), { padding: [20, 20] });
 
+  // 坂道（傾き5%以上）を歩いた距離と、そこでの速さ
+  function slopeText(w) {
+    if (w.slope_distance_m == null) return "計算中（標高データを取得できたら計算します）";
+    if (w.slope_distance_m < 1) return "なし";
+    return `${walkFormat.distance(w.slope_distance_m)}・${walkFormat.speed(w.slope_speed_m_per_min)}`;
+  }
+
   const summary = document.getElementById("summary");
   for (const [label, value] of [
     ["距離", walkFormat.distance(w.distance_m)],
     ["時間", walkFormat.duration(w.duration_s)],
     ["歩いていた時間", walkFormat.duration(w.moving_s)],
     ["速さ", walkFormat.speed(w.speed_m_per_min)],
+    ["坂道", slopeText(w)],
   ]) {
     const box = document.createElement("div");
     const dt = document.createElement("dt");

@@ -29,7 +29,13 @@
   speedEl.append("あなたの歩く速さ：", el("strong", "", walkFormat.speed(speed.speed_m_per_min)));
   speedEl.append(el("small", "", speed.is_default
     ? "まだ記録が足りないため、標準の速さです。200 m 以上歩いて記録すると、あなたの速さになります。"
-    : `直近 ${speed.walks} 回の記録から計算しています。経路検索の所要時間に使われます。`));
+    : `直近 ${speed.walks} 回の記録の、坂道を除いた区間から計算しています。経路検索の所要時間に使われます。`));
+  const rest = Math.max(1, Math.ceil(speed.slope_min_distance_m - speed.slope_distance_m));
+  speedEl.append(el("small", "", `坂道での速さ：${walkFormat.speed(speed.slope_speed_m_per_min)}`
+    + (speed.slope_is_default
+      ? `（仮の値：ふだんの速さから決めています）。坂道をあと 約 ${rest} m 歩いて記録すると、あなたの坂道での速さになります。`
+      : `（直近の記録で坂道を歩いた 約 ${Math.round(speed.slope_distance_m)} m から計算）。`)
+    + "経路検索では、坂道で遅くなる分を含めて一番早く着く道を案内します。"));
 
   if (!walks.length) {
     listEl.appendChild(el("li", "walk-empty", "まだ記録がありません。ホームの右下の「記録」ボタンから記録できます。"));

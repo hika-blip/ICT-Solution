@@ -61,6 +61,8 @@
   .map-fab:hover { background: var(--blue-light); }
   .map-fab-pin { color: #fff; background: #2E9D4F; }
   .map-fab-pin:hover { background: #237A3D; }
+  .map-fab-hazard { color: #fff; background: #D93025; }
+  .map-fab-hazard:hover { background: #B3261E; }
   .map-fab-walk.walk-recording { color: #fff; background: #E8710A; }
   .map-fab-walk.walk-recording:hover { background: #C55F08; }
   /* 現在地ボタン：丸いアイコン */
@@ -85,8 +87,14 @@
   }
   .mode-tab[aria-selected="true"] { color: #fff; background: var(--blue); }
   .mode-tab.mode-tab-emergency[aria-selected="true"] { color: #fff; background: #D93025; }
-  /* 緊急時は避難に関係しないピン・現在地ボタンを隠す */
-  .screen-map:has(#panel-emergency:not([hidden])) .map-fabs { display: none; }
+  /* 緊急時は避難に関係しないピン・記録・現在地ボタンを隠す（危険個所の投稿ボタンは残す） */
+  .screen-map:has(#panel-emergency:not([hidden])) .map-fabs > :not(.map-fab-hazard) { display: none; }
+  /* 危険個所の投稿中の案内（平常時・緊急時どちらでも出す） */
+  .hazard-badge {
+    margin: 0; padding: 6px 14px; font-size: 0.85rem; font-weight: 700; color: #fff;
+    background: #D93025; border-radius: 999px; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+  }
+  .hazard-badge[hidden] { display: none; }
   .evac-panel {
     width: 340px; max-height: calc(100dvh - 160px); overflow-y: auto; padding: 10px 12px;
     background: #fff; border-radius: 16px; box-shadow: 0 1px 6px rgba(0, 0, 0, 0.3);
@@ -157,6 +165,7 @@
       </div>
       <p class="walk-badge" id="walk-badge" role="status" hidden></p>
     </div>
+    <p class="hazard-badge" id="hazard-badge" role="status" hidden></p>
     <div class="map-panel" id="panel-emergency" role="tabpanel" aria-labelledby="tab-emergency" hidden>
       <div class="evac-panel">
         <p class="route-message" id="evac-message">「避難場所を探す」を押すと、現在地から近い避難場所3か所への経路を表示します。</p>
@@ -189,6 +198,7 @@
     </div>
   </div>
   <div class="map-fabs">
+    <button type="button" class="map-fab map-fab-hazard" id="hazard-add">危険</button>
     <button type="button" class="map-fab map-fab-pin" id="pin-add">ピン</button>
     <button type="button" class="map-fab map-fab-walk" id="walk-toggle" title="歩いた道を記録する">記録</button>
     <button type="button" class="map-fab map-fab-locate" id="locate" aria-label="現在地" title="現在地">
@@ -214,6 +224,22 @@
   <p class="pin-error" id="pin-error"></p>
   <div class="route-actions">
     <button type="button" class="button button-secondary" id="pin-cancel">キャンセル</button>
+    <button type="submit" class="button button-primary">投稿する</button>
+  </div>
+</form>
+<form class="pin-sheet" id="hazard-sheet" hidden>
+  <h2>危険個所を投稿する</h2>
+  <p class="pin-where" id="hazard-where"></p>
+  <div class="pin-tags" id="hazard-status">
+    <label class="pin-check"><input type="radio" name="status" value="passable" checked><span>歩いて通れる（注意）</span></label>
+    <label class="pin-check"><input type="radio" name="status" value="blocked"><span>通行不可</span></label>
+  </div>
+  <div class="pin-tags" id="hazard-tags" aria-label="危険の種類（任意）"></div>
+  <input type="file" id="hazard-photo" accept="image/jpeg,image/png,image/webp">
+  <img class="pin-preview" id="hazard-preview" alt="選んだ写真" hidden>
+  <p class="pin-error" id="hazard-error"></p>
+  <div class="route-actions">
+    <button type="button" class="button button-secondary" id="hazard-cancel">キャンセル</button>
     <button type="submit" class="button button-primary">投稿する</button>
   </div>
 </form>
@@ -470,7 +496,7 @@
   };
 
   map.on("click", (e) => {
-    if (window.pinMode || window.emergencyMode) return;  // ピンを立てる操作中・緊急時は経路用に使わない
+    if (window.pinMode || window.hazardMode || window.emergencyMode) return;  // ピン・危険個所を投稿する操作中・緊急時は経路用に使わない
     if (!orig) {
       setOrig(e.latlng);
     } else if (!dest) {
@@ -502,6 +528,7 @@
   });
 </script>
 <script src="{{ url_for('static', path='js/pins.js') }}"></script>
+<script src="{{ url_for('static', path='js/hazards.js') }}"></script>
 <script src="{{ url_for('static', path='js/facilities.js') }}"></script>
 <script src="{{ url_for('static', path='js/walk_format.js') }}"></script>
 <script src="{{ url_for('static', path='js/walklog.js') }}"></script>

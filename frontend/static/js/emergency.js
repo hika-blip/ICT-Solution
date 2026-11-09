@@ -166,6 +166,7 @@
       window.clearHazardMap();  // 「やり直す」では消さないので clearAll には入れない（hazard.js）
     }
     setTimeout(() => map.invalidateSize(), 0);  // パネルの高さが変わるので地図の大きさを取り直す
+    document.dispatchEvent(new CustomEvent("emergency-mode-changed"));  // hazards.js が通れない道を出し入れする
   }
 
   tabNormal.addEventListener("click", () => setMode(false));
@@ -201,7 +202,7 @@
 
   // 緊急時は地図のタップで出発地を決められる（現在地が取れないとき用）
   map.on("click", (e) => {
-    if (!window.emergencyMode || window.pinMode) return;
+    if (!window.emergencyMode || window.pinMode || window.hazardMode) return;
     clearRoutes();
     setOrigin(e.latlng);
     search();

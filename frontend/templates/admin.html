@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>管理画面｜ひたふら</title>
+  <link rel="stylesheet" href="{{ url_for('static', path='css/style.css') }}">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+  <link rel="stylesheet" href="{{ url_for('static', path='css/facilities.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', path='css/admin.css') }}">
+</head>
+<body class="admin-body">
+  <header class="admin-header">
+    <div class="admin-brand">ひたふら <span>管理画面</span></div>
+    <div class="admin-user">
+      <span>{{ admin.name }}</span>
+      <form method="post" action="/admin/logout">
+        <button type="submit" class="admin-logout">ログアウト</button>
+      </form>
+    </div>
+  </header>
+
+  <nav class="admin-tabs" role="tablist" aria-label="管理する対象">
+    <button type="button" class="admin-tab" role="tab" data-tab="facilities" aria-selected="true">施設</button>
+    <button type="button" class="admin-tab" role="tab" data-tab="sites" aria-selected="false">避難先</button>
+    <button type="button" class="admin-tab" role="tab" data-tab="pins" aria-selected="false">ピン</button>
+    <button type="button" class="admin-tab" role="tab" data-tab="csv" aria-selected="false">CSV</button>
+  </nav>
+
+  <div class="admin-main">
+    <section class="admin-panel" id="panel">
+      <!-- 一覧（施設・避難先・ピン） -->
+      <div id="list-view">
+        <div class="admin-toolbar">
+          <input type="search" class="admin-search" id="search" placeholder="名前で検索">
+          <select class="admin-select" id="filter" aria-label="絞り込み"></select>
+          <button type="button" class="admin-add" id="add">＋ 追加</button>
+        </div>
+        <p class="admin-count" id="count"></p>
+        <ul class="admin-list" id="list"></ul>
+      </div>
+
+      <!-- 施設の追加・編集 -->
+      <form class="admin-form" id="facility-form" hidden>
+        <h2 class="admin-form-title" id="facility-form-title">施設を追加</h2>
+        <p class="alert" id="facility-error" role="alert" hidden></p>
+        <label class="field"><span class="field-label">施設名</span>
+          <input type="text" name="name" maxlength="100" required></label>
+        <label class="field"><span class="field-label">種類</span>
+          <select name="category">
+            {% for c in categories %}<option value="{{ c }}">{{ c }}</option>{% endfor %}
+          </select></label>
+        <div class="field"><span class="field-label">ピンの位置</span>
+          <div class="admin-latlon">
+            <input type="number" name="lat" step="0.000001" placeholder="緯度" required>
+            <input type="number" name="lon" step="0.000001" placeholder="経度" required>
+          </div>
+          <span class="field-hint">地図をクリックするか、ピンをドラッグして決められます。</span></div>
+        <label class="field"><span class="field-label">説明（任意）</span>
+          <textarea name="description" maxlength="500" rows="2"></textarea></label>
+
+        <div class="field"><span class="field-label">入口・門</span>
+          <span class="field-hint">経路のゴールにする場所です。歩いて着く道に面した位置に置いてください。</span>
+          <ul class="admin-entrances" id="entrances"></ul>
+          <button type="button" class="admin-mini" id="entrance-add">＋ 入口を追加（地図をクリックして置く）</button>
+        </div>
+        <p class="field-hint" id="area-note" hidden>敷地の形が登録されています（地図に紫の点線で表示。編集は今後対応）。</p>
+
+        <label class="admin-check"><input type="checkbox" name="is_hidden"> 非公開にする（住民の画面・経路検索に出さない）</label>
+        <div class="admin-actions">
+          <button type="button" class="button button-secondary" data-cancel>キャンセル</button>
+          <button type="submit" class="button button-primary">保存する</button>
+        </div>
+        <button type="button" class="admin-delete" data-delete hidden>この施設を削除する</button>
+      </form>
+
+      <!-- 避難先の追加・編集 -->
+      <form class="admin-form" id="site-form" hidden>
+        <h2 class="admin-form-title" id="site-form-title">避難先を追加</h2>
+        <p class="alert" id="site-error" role="alert" hidden></p>
+        <label class="field"><span class="field-label">名称</span>
+          <input type="text" name="name" maxlength="100" required></label>
+        <label class="field"><span class="field-label">住所（任意）</span>
+          <input type="text" name="address" maxlength="100"></label>
+        <div class="field"><span class="field-label">種別</span>
+          <div class="admin-kinds">
+            {% for k in kinds %}<label class="admin-check"><input type="checkbox" name="kinds" value="{{ k }}"> 指定{{ k }}</label>{% endfor %}
+          </div></div>
+        <div class="field"><span class="field-label">位置</span>
+          <div class="admin-latlon">
+            <input type="number" name="lat" step="0.000001" placeholder="緯度" required>
+            <input type="number" name="lon" step="0.000001" placeholder="経度" required>
+          </div>
+          <span class="field-hint">地図をクリックするか、ピンをドラッグして決められます。</span></div>
+        <label class="admin-check"><input type="checkbox" name="is_hidden"> 非公開にする（避難経路の候補にしない）</label>
+        <div class="admin-actions">
+          <button type="button" class="button button-secondary" data-cancel>キャンセル</button>
+          <button type="submit" class="button button-primary">保存する</button>
+        </div>
+        <button type="button" class="admin-delete" data-delete hidden>この避難先を削除する</button>
+      </form>
+
+      <!-- CSV -->
+      <div class="admin-csv" id="csv-view" hidden>
+        <h2 class="admin-form-title">CSVでの共有・バックアップ</h2>
+        <p class="admin-count" id="csv-counts"></p>
+        <div class="admin-csv-box">
+          <h3>CSVに書き出す</h3>
+          <p>施設・入口・敷地・避難先を <code>seeds/</code> のCSVファイルに上書き保存します。
+             そのまま commit・push すると、班のみんなと共有できます。</p>
+          <button type="button" class="button button-primary" id="csv-export">CSVに書き出す</button>
+        </div>
+        <div class="admin-csv-box">
+          <h3>CSVから読み込み直す</h3>
+          <p><code>seeds/</code> のCSVの内容で、この画面の施設・避難先を入れ替えます（git pull したあとに使います）。
+             書き出していない変更は消えます。住民のアカウント・ピン・歩行ログは変わりません。</p>
+          <button type="button" class="button button-danger" id="csv-import">CSVから読み込み直す</button>
+        </div>
+        <p class="admin-result" id="csv-result" role="status"></p>
+      </div>
+    </section>
+
+    <div class="admin-map-wrap">
+      <div id="map"></div>
+      <p class="admin-map-hint" id="map-hint" hidden></p>
+    </div>
+  </div>
+
+  <p class="toast" id="toast" role="status" hidden></p>
+
+  <script>
+    window.ADMIN = {
+      categories: {{ categories | tojson }},
+      kinds: {{ kinds | tojson }},
+      tags: {{ tags | tojson }},
+      area: {{ area | tojson }},   // 地図データの範囲（無いときは null）
+    };
+  </script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+  <script src="{{ url_for('static', path='js/admin.js') }}"></script>
+</body>
+</html>

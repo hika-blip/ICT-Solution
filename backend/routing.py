@@ -14,9 +14,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import networkx as nx
+import numpy as np
 import osmnx as ox
 
 import osm_to_network as osm
+from .db import connect
 
 GRAPH_PATH = Path(__file__).resolve().parent.parent / "data" / "map.graphml"
 
@@ -32,6 +34,9 @@ class WalkSpeeds:
     flat: float   # 普通の道
     slope: float  # 坂道
 
+_edge_list = None          # 地図上の道（上り下りを1本にまとめたもの）[(u, v, 座標列)]。初回に作る
+_blocked_cache = (None, [], [])   # (通行不可の危険個所の座標一覧, 目印を付ける道, 探索で通れなくする辺)
+
 
 class RouteError(Exception):
     """経路検索ができないときのエラー（messageをそのまま利用者に返せる）。"""
@@ -45,7 +50,90 @@ def load_graph() -> bool:
         return False
     _graph = ox.load_graphml(GRAPH_PATH)
     _has_elevation = _add_slope_lengths(_graph)
+    global _blocked_cache, _edge_list
+    _edge_list = None
+    _blocked_cache = (None, [], [])
     return True
+
+
+def _blocked_points() -> tuple:
+    """通行不可の危険個所の座標 ((緯度, 経度), ...)。"""
+    with connect() as conn:
+        return tuple((r["lat"], r["lon"]) for r in
+                     conn.execute("SELECT lat, lon FROM hazards WHERE status = 'blocked' ORDER BY id"))
+
+
+def _all_edges() -> list:
+    """地図上のすべての道 [(u, v, [[緯度, 経度], ...])]。上りと下りは1本にまとめる。"""
+    global _edge_list
+    if _edge_list is None:
+        seen = set()
+        _edge_list = []
+        for u, v in _graph.edges():
+            key = frozenset((u, v))
+            if u == v or key in seen:
+                continue
+            seen.add(key)
+            _edge_list.append((u, v, _edge_coords(u, v, min(_graph[u][v].values(), key=lambda d: d["length"]))))
+    return _edge_list
+
+
+def _dist_to_polyline_m(lat: float, lon: float, coords: list) -> float:
+    """点から折れ線までの距離[m]（近い範囲なので平面に直して測る）。"""
+    kx = 111_320 * np.cos(np.radians(lat))   # 経度1度あたりの長さ[m]
+    ky = 110_574                              # 緯度1度あたりの長さ[m]
+    pts = [((c[1] - lon) * kx, (c[0] - lat) * ky) for c in coords]
+    best = float("inf")
+    for (x1, y1), (x2, y2) in zip(pts, pts[1:]):
+        dx, dy = x2 - x1, y2 - y1
+        length2 = dx * dx + dy * dy
+        t = 0.0 if length2 == 0 else max(0.0, min(1.0, -(x1 * dx + y1 * dy) / length2))
+        best = min(best, float(np.hypot(x1 + t * dx, y1 + t * dy)))
+    return best
+
+
+def _blocked_state() -> tuple:
+    """通行不可の危険個所ごとに、いちばん近い道1本を求める。戻り値: (目印を付ける道, 探索で通れなくする辺)。
+
+    画面の目印と探索で、同じ道を使う（見た目と動作を必ず一致させる）。
+    投稿・削除のたびに変わるので、検索のたびに DB を見る（座標の一覧が同じ間は前の結果を使い回す）。
+    """
+    global _blocked_cache
+    if _graph is None:
+        return [], []
+    points = _blocked_points()
+    if _blocked_cache[0] == points:
+        return _blocked_cache[1], _blocked_cache[2]
+    edges = _all_edges()
+    chosen: dict = {}
+    for lat, lon in points:
+        u, v, coords = min(edges, key=lambda e: _dist_to_polyline_m(lat, lon, e[2]))
+        chosen[frozenset((u, v))] = (u, v, coords)   # 同じ道に複数あれば1本にまとめる
+    marked = [{"coords": c, "mid": c[len(c) // 2]} for _, _, c in chosen.values()]
+    removed = [(a, b, k) for u, v, _ in chosen.values() for a, b in ((u, v), (v, u))
+               if _graph.has_edge(a, b) for k in _graph[a][b]]   # 上りも下りも、並行する辺も全部
+    _blocked_cache = (points, marked, removed)
+    return marked, removed
+
+
+def blocked_edges() -> list[dict]:
+    """通行不可の目印を付ける道（緊急時の地図に縞線で示す）。危険個所ごとに、いちばん近い道1本。
+
+    戻り値: [{"coords": [[緯度, 経度], ...], "mid": [緯度, 経度]}, ...]
+    """
+    return _blocked_state()[0]
+
+
+def _search_graph():
+    """通行不可の道を取り除いたグラフ（見え方だけ変える。元のグラフは書き換えない）。"""
+    removed = _blocked_state()[1]
+    return nx.restricted_view(_graph, [], removed) if removed else _graph
+
+
+def _no_route_error(message: str) -> RouteError:
+    if _blocked_state()[1]:
+        return RouteError("通行不可の場所を避けると、目的地までの経路が見つかりません")
+    return RouteError(message)
 
 
 def _add_slope_lengths(G) -> bool:
@@ -126,7 +214,7 @@ def _shortest_path(source: int, target: int, speeds: WalkSpeeds, minimize: str) 
         return min(_edge_cost(d, speeds, minimize) for d in edges.values())
 
     try:
-        return nx.astar_path(_graph, source, target, heuristic=heuristic, weight=weight)
+        return nx.astar_path(_search_graph(), source, target, heuristic=heuristic, weight=weight)
     except nx.NetworkXNoPath:
         return None
 
@@ -207,6 +295,7 @@ def find_route_between(starts: list[tuple], goals: list[tuple], speeds: WalkSpee
     targets = snap_all(goals, "目的地")
     best = None
     too_close = False
+    blocked_hit = False
     for s_name, s_point, s_extra, source in sources:
         for g_name, g_point, g_extra, target in targets:
             if source == target:
@@ -214,6 +303,7 @@ def find_route_between(starts: list[tuple], goals: list[tuple], speeds: WalkSpee
                 continue
             path = _shortest_path(source, target, speeds, minimize)
             if path is None:
+                blocked_hit = blocked_hit or bool(_blocked_state()[1])
                 continue
             result = _path_result(source, path, speeds, minimize)
             result["distance_m"] += s_extra + g_extra
@@ -225,6 +315,8 @@ def find_route_between(starts: list[tuple], goals: list[tuple], speeds: WalkSpee
     if best is None:
         if too_close:
             raise RouteError("出発地と目的地が近すぎます。離れた場所を選んでください")
+        if blocked_hit:
+            raise RouteError("通行不可の場所を避けると、目的地までの経路が見つかりません")
         raise RouteError("目的地までの経路が見つかりません")
     return best
 
@@ -249,5 +341,5 @@ def find_route(orig: tuple[float, float], dest: tuple[float, float], speeds: Wal
         raise RouteError("出発地と目的地が近すぎます。離れた場所を選んでください")
     path = _shortest_path(source, target, speeds, "time")
     if path is None:
-        raise RouteError("経路が見つかりません")
+        raise _no_route_error("経路が見つかりません")
     return _path_result(source, path, speeds, "time")

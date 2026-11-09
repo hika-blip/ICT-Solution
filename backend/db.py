@@ -70,6 +70,25 @@ def init_db():
                 PRIMARY KEY (pin_id, tag)
             );
 
+            -- 危険個所の投稿。status: passable=歩いて通れる(注意) / blocked=通行不可
+            CREATE TABLE IF NOT EXISTS hazards (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                lat        REAL NOT NULL,
+                lon        REAL NOT NULL,
+                status     TEXT NOT NULL CHECK (status IN ('passable', 'blocked')),
+                photo_file TEXT,                      -- 写真は1枚まで（任意。なければNULL）
+                created_at TEXT NOT NULL              -- 投稿日時（UTC, ISO形式）
+            );
+            CREATE INDEX IF NOT EXISTS idx_hazards_latlon ON hazards(lat, lon);
+
+            -- 危険個所の種類（タグ。複数選べる）
+            CREATE TABLE IF NOT EXISTS hazard_tags (
+                hazard_id INTEGER NOT NULL REFERENCES hazards(id) ON DELETE CASCADE,
+                tag       TEXT NOT NULL,
+                PRIMARY KEY (hazard_id, tag)
+            );
+
             -- 歩行ログ（1回の記録）。距離・時間は保存時にサーバで計算する
             CREATE TABLE IF NOT EXISTS walks (
                 id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -94,6 +113,27 @@ def init_db():
             );
             """
         )
+        # 旧版の hazards は photo_file が NOT NULL だったので、作り直して NULL を許す
+        cols = {r["name"]: r for r in conn.execute("PRAGMA table_info(hazards)")}
+        if cols["photo_file"]["notnull"]:
+            conn.executescript(
+                """
+                ALTER TABLE hazards RENAME TO hazards_old;
+                DROP INDEX IF EXISTS idx_hazards_latlon;
+                CREATE TABLE hazards (
+                    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    lat        REAL NOT NULL,
+                    lon        REAL NOT NULL,
+                    status     TEXT NOT NULL CHECK (status IN ('passable', 'blocked')),
+                    photo_file TEXT,
+                    created_at TEXT NOT NULL
+                );
+                INSERT INTO hazards SELECT * FROM hazards_old;
+                DROP TABLE hazards_old;
+                CREATE INDEX idx_hazards_latlon ON hazards(lat, lon);
+                """
+            )
         # IDを 100001 から始めるため、連番の開始値を設定する（初回のみ）
         row = conn.execute("SELECT seq FROM sqlite_sequence WHERE name = 'users'").fetchone()
         if row is None:

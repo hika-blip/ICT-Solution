@@ -42,6 +42,8 @@ from .account import router as account_router
 app.include_router(account_router)
 from .pins import router as pins_router
 app.include_router(pins_router)
+from .hazards import router as hazards_router
+app.include_router(hazards_router)
 app.include_router(facilities.router)
 app.include_router(evacuate.router)
 from .walks import router as walks_router

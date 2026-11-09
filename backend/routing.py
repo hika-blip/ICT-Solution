@@ -10,11 +10,11 @@ osm_to_network.py 側は変更せず、グラフの読み込み・最寄りノ�
   遠回りでかえって遅くなるなら坂道をそのまま通る。
   標高の無い地図データでは、すべて平らな道とみなす（距離が一番短い経路と同じになる）。
 """
-<<<<<<< HEAD
+#<<<<<<< HEAD
 import json
-=======
+#=======
 from dataclasses import dataclass
->>>>>>> d7f156c42343d3e7ed5de6453005f6fe95100652
+#>>>>>>> d7f156c42343d3e7ed5de6453005f6fe95100652
 from pathlib import Path
 
 import networkx as nx
@@ -26,7 +26,7 @@ from .db import connect
 
 GRAPH_PATH = Path(__file__).resolve().parent.parent / "data" / "map.graphml"
 # 道路の幅 [[始点ノード, 終点ノード, 長さ[m], 幅[m]], ...]。scripts/build_road_widths.py が作る
-WIDTHS_PATH = Path(__file__).resolve().parent.parent / "data" / "road_widths.json"
+WIDTHS_PATH = Path(__file__).resolve().parent.parent / "road_widths.json"
 NARROW_ROAD_M = 3.0  # 幅がこれ未満の道は「細道」として、通れないものとして経路を探す
 
 _graph = None

@@ -82,14 +82,12 @@ def read_road_edges(zip_paths):
     return lines
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--with-edges", action="store_true", help="道路縁の線も地図に重ねられるようにする")
-    args = ap.parse_args()
+def compute_widths(zips):
+    """道路縁のzipから、道路網の辺ごとの幅を測る。
 
-    zips = sorted(glob.glob(str(DATA / "FG-GML-*.zip")))
-    if not zips:
-        sys.exit(f"{DATA} に FG-GML-*.zip がありません")
+    戻り値: (辺ごとの結果のリスト, 地図に重ねる道路縁 [[(緯度, 経度), ...], ...], 地図の中心 (緯度, 経度))
+    各結果: {"u", "v", "ll", "hw", "name", "len", "w"(幅[m]。測れなければ None), "valid", "total"}
+    """
     log("1) 道路縁を読み込み中…")
     edge_ll = read_road_edges(zips)
 
@@ -127,7 +125,8 @@ def main():
         else:
             lonlat = [(G.nodes[u]["x"], G.nodes[u]["y"]), (G.nodes[v]["x"], G.nodes[v]["y"])]
         hw = d["highway"] if isinstance(d["highway"], str) else d["highway"][0]
-        rec = {"ll": [[lat, lon] for lon, lat in lonlat], "hw": hw, "name": d.get("name") if isinstance(d.get("name"), str) else "",
+        rec = {"u": u, "v": v, "ll": [[lat, lon] for lon, lat in lonlat], "hw": hw,
+               "name": d.get("name") if isinstance(d.get("name"), str) else "",
                "len": round(float(d["length"]), 1), "w": None, "valid": 0, "total": 0}
         if hw not in NOT_FOR_CARS:
             line = LineString(to_m(lonlat))
@@ -136,10 +135,21 @@ def main():
             if widths[1] and len(widths[0]) / widths[1] >= MIN_VALID_RATIO:
                 rec["w"] = round(float(np.median(widths[0])), 1)
         results.append(rec)
+    return results, edge_ll_used, (lat0, lon0)
 
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--with-edges", action="store_true", help="道路縁の線も地図に重ねられるようにする")
+    args = ap.parse_args()
+
+    zips = sorted(glob.glob(str(DATA / "FG-GML-*.zip")))
+    if not zips:
+        sys.exit(f"{DATA} に FG-GML-*.zip がありません")
+    results, edge_ll_used, center = compute_widths(zips)
     summarize(results)
-    write_html(results, edge_ll_used if args.with_edges else None, (lat0, lon0))
-    log(f"\n出力しました: {OUT}\nブラウザで開いて確認してください。")
+    write_html(results, edge_ll_used if args.with_edges else None, center)
+    log(f"出力しました: {OUT}\nブラウザで開いて確認してください。")
 
 
 def measure(line, tree, edge_geoms):

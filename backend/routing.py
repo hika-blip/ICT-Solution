@@ -3,6 +3,7 @@
 osm_to_network.py 側は変更せず、グラフの読み込み・最寄りノード探索・最短経路探索だけを使う。
 グラフは data/map.graphml を起動時に1回だけ読み込む（無ければ経路検索だけ使えない）。
 """
+import json
 from pathlib import Path
 
 import networkx as nx
@@ -13,12 +14,16 @@ import osm_to_network as osm
 from .db import connect
 
 GRAPH_PATH = Path(__file__).resolve().parent.parent / "data" / "map.graphml"
+# 道路の幅 [[始点ノード, 終点ノード, 長さ[m], 幅[m]], ...]。scripts/build_road_widths.py が作る
+WIDTHS_PATH = Path(__file__).resolve().parent.parent / "data" / "road_widths.json"
+NARROW_ROAD_M = 3.0  # 幅がこれ未満の道は「細道」として、通れないものとして経路を探す
 
 _graph = None
 MAX_SNAP_M = 300  # 指定地点から最寄りの道までの許容距離[m]
 
 _edge_list = None          # 地図上の道（上り下りを1本にまとめたもの）[(u, v, 座標列)]。初回に作る
 _blocked_cache = (None, [], [])   # (通行不可の危険個所の座標一覧, 目印を付ける道, 探索で通れなくする辺)
+_narrow_edges: list = []   # 細道の辺 [(u, v, key), ...]。起動時に作る
 
 
 class RouteError(Exception):
@@ -35,7 +40,22 @@ def load_graph() -> bool:
     global _blocked_cache, _edge_list
     _edge_list = None
     _blocked_cache = (None, [], [])
+    load_narrow_edges()
     return True
+
+
+def load_narrow_edges() -> int:
+    """幅が NARROW_ROAD_M 未満の辺を求める。幅のファイルが無ければ細道は除外しない。件数を返す。"""
+    global _narrow_edges
+    _narrow_edges = []
+    if _graph is None or not WIDTHS_PATH.exists():
+        return 0
+    rows = json.loads(WIDTHS_PATH.read_text(encoding="utf-8"))
+    # 辺は「両端のノード + 長さ」で突き合わせる（上りと下りは同じ幅として両方向を対象にする）
+    narrow = {(frozenset((u, v)), round(length, 1)) for u, v, length, width in rows if width < NARROW_ROAD_M}
+    _narrow_edges = [(a, b, k) for a, b, k, d in _graph.edges(keys=True, data=True)
+                     if (frozenset((a, b)), round(d["length"], 1)) in narrow]
+    return len(_narrow_edges)
 
 
 def _blocked_points() -> tuple:
@@ -106,15 +126,23 @@ def blocked_edges() -> list[dict]:
     return _blocked_state()[0]
 
 
+def _removed_edges() -> list:
+    """探索で通れないものとして扱う辺（通行不可の危険個所の道 + 細道）。"""
+    return _blocked_state()[1] + _narrow_edges
+
+
 def _search_graph():
-    """通行不可の道を取り除いたグラフ（見え方だけ変える。元のグラフは書き換えない）。"""
-    removed = _blocked_state()[1]
+    """通れない道を取り除いたグラフ（見え方だけ変える。元のグラフは書き換えない）。"""
+    removed = _removed_edges()
     return nx.restricted_view(_graph, [], removed) if removed else _graph
 
 
+_AVOID_MESSAGE = "通行不可の場所や細い道を避けると、目的地までの経路が見つかりません"
+
+
 def _no_route_error(message: str) -> RouteError:
-    if _blocked_state()[1]:
-        return RouteError("通行不可の場所を避けると、目的地までの経路が見つかりません")
+    if _removed_edges():
+        return RouteError(_AVOID_MESSAGE)
     return RouteError(message)
 
 
@@ -202,7 +230,7 @@ def find_route_between(starts: list[tuple], goals: list[tuple]) -> dict:
                 continue
             path, _ = osm.shortest_path(_search_graph(), source, target, weight="length", algo="astar")
             if path is None:
-                blocked_hit = blocked_hit or bool(_blocked_state()[1])
+                blocked_hit = blocked_hit or bool(_removed_edges())
                 continue
             result = _path_result(source, path)
             result["distance_m"] += s_extra + g_extra
@@ -214,7 +242,7 @@ def find_route_between(starts: list[tuple], goals: list[tuple]) -> dict:
         if too_close:
             raise RouteError("出発地と目的地が近すぎます。離れた場所を選んでください")
         if blocked_hit:
-            raise RouteError("通行不可の場所を避けると、目的地までの経路が見つかりません")
+            raise RouteError(_AVOID_MESSAGE)
         raise RouteError("目的地までの経路が見つかりません")
     return best
 

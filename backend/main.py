@@ -5,6 +5,7 @@
 ブラウザで http://localhost:8000 を開く。
 """
 import os
+import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -32,6 +33,8 @@ async def lifespan(app: FastAPI):
     facilities.load_seeds()
     routing.load_graph()
     evacuate.load_sites()
+    # 坂道の速さがまだ計算されていない歩行ログを計算する（標高タイルの取得に時間がかかることがあるので別スレッド）
+    threading.Thread(target=walks.backfill_slope_stats, daemon=True).start()
     yield
 
 

@@ -97,7 +97,9 @@ def init_db():
                 ended_at   TEXT NOT NULL,   -- 記録終了（UTC, ISO形式）
                 distance_m REAL NOT NULL,   -- 歩いた距離 [m]
                 duration_s REAL NOT NULL,   -- 開始〜終了の時間 [秒]
-                moving_s   REAL NOT NULL    -- 止まっていた時間を除いた時間 [秒]
+                moving_s   REAL NOT NULL,   -- 止まっていた時間を除いた時間 [秒]
+                slope_distance_m REAL,      -- うち坂道を歩いた距離 [m]（NULL は未計算）
+                slope_moving_s   REAL       -- うち坂道を歩いていた時間 [秒]（NULL は未計算）
             );
             CREATE INDEX IF NOT EXISTS idx_walks_user ON walks(user_id, started_at);
 
@@ -134,6 +136,11 @@ def init_db():
                 CREATE INDEX idx_hazards_latlon ON hazards(lat, lon);
                 """
             )
+        # walks に後から足した列（以前に作ったDBには無いので追加する）
+        walk_cols = {r["name"] for r in conn.execute("PRAGMA table_info(walks)")}
+        for col in ("slope_distance_m", "slope_moving_s"):
+            if col not in walk_cols:
+                conn.execute(f"ALTER TABLE walks ADD COLUMN {col} REAL")
         # IDを 100001 から始めるため、連番の開始値を設定する（初回のみ）
         row = conn.execute("SELECT seq FROM sqlite_sequence WHERE name = 'users'").fetchone()
         if row is None:

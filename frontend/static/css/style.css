@@ -213,6 +213,34 @@ body {
   color: var(--blue-dark); background: var(--blue-light); border: none; border-radius: 8px; cursor: pointer;
 }
 
+/* ===== 危険個所 ===== */
+.hazard-icon span {
+  display: block; width: 22px; height: 22px; margin: 2px;
+  border: 3px solid #fff; border-radius: 50% 50% 50% 0; transform: rotate(-45deg); box-shadow: 0 1px 4px rgba(0,0,0,.4);
+}
+.hazard-icon-passable span { background: #F2B01E; }
+/* 通行可能（注意）のピンは、大きく・光らせて特に目立たせる */
+.hazard-icon-passable span {
+  width: 30px; height: 30px; margin: 0; border-width: 4px; border-color: #D93025;
+  animation: hazard-pulse 1.4s ease-out infinite;
+}
+@keyframes hazard-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(242, 176, 30, 0.9), 0 1px 4px rgba(0,0,0,.4); }
+  100% { box-shadow: 0 0 0 18px rgba(242, 176, 30, 0), 0 1px 4px rgba(0,0,0,.4); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hazard-icon-passable span { animation: none; box-shadow: 0 0 0 6px rgba(242, 176, 30, 0.7); }
+}
+/* 通れない道の×印（緊急時の地図） */
+.blocked-x span {
+  display: block; width: 24px; height: 24px; line-height: 20px; text-align: center;
+  font-size: 22px; font-weight: 900; color: #FFD600; background: #000;
+  border: 2px solid #FFD600; border-radius: 50%; box-shadow: 0 1px 4px rgba(0,0,0,.5);
+}
+.hazard-icon-blocked span { background: #111; border-color: #FFD600; }
+.hazard-chip-passable { background: #FFF1CC; color: #7A5600; }
+.hazard-chip-blocked { background: #111; color: #FFD600; }
+
 /* ===== 歩行ログ ===== */
 .walk-speed {
   margin: 0 0 16px; padding: 12px 14px; border-radius: var(--radius); background: var(--blue-light);

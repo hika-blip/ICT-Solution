@@ -10,11 +10,8 @@ osm_to_network.py 側は変更せず、グラフの読み込み・最寄りノ�
   遠回りでかえって遅くなるなら坂道をそのまま通る。
   標高の無い地図データでは、すべて平らな道とみなす（距離が一番短い経路と同じになる）。
 """
-<<<<<<< HEAD
 import json
-=======
 from dataclasses import dataclass
->>>>>>> d7f156c42343d3e7ed5de6453005f6fe95100652
 from pathlib import Path
 
 import networkx as nx

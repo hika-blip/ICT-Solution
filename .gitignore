@@ -234,3 +234,8 @@ venv/
 
 # 背景地図(自動生成)
 *_basemap.tif
+
+# 負荷テスト（ID・パスワードと結果は共有しない。地点は各自の地図データから作る）
+loadtest/users.json
+loadtest/points.json
+loadtest/results/

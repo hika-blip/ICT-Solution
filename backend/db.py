@@ -2,12 +2,14 @@
 
 DBファイルは data/app.db に作られる（data/ は .gitignore 済みで共有されない）。
 """
+import os
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-DB_PATH = BASE_DIR / "data" / "app.db"
+# 環境変数 APP_DB_PATH で別のDBファイルを使える（負荷テストで本物のDBを汚さないため）
+DB_PATH = Path(os.environ.get("APP_DB_PATH") or BASE_DIR / "data" / "app.db")
 
 # 最初に割り振るユーザID（6桁の連番）
 FIRST_USER_ID = 100001

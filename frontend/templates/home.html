@@ -27,7 +27,13 @@
     background: #fff; border-radius: 22px; box-shadow: 0 1px 6px rgba(0, 0, 0, 0.3);
   }
   .route-message { margin: 0; font-size: 0.85rem; line-height: 1.4; }
-  #message { white-space: pre-line; }  /* 経路の案内は「経路の内容」「もう一方との比較」「計算に使った速さ」の3行 */
+  /* 経路の脇に出す「距離・時間」（平常時・緊急時で共通） */
+  .leaflet-tooltip.route-label {
+    padding: 3px 10px; font-family: inherit; font-size: 0.9rem; font-weight: 700; white-space: nowrap;
+    color: #fff; background: var(--route-color, #2E6BB0); border: 2px solid #fff; border-radius: 999px;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+  }
+  .leaflet-tooltip.route-label::before { display: none; }  /* 吹き出しの三角は出さない */
   /* 通常／坂道考慮の切り替え（経路を表示しているときだけ） */
   .route-modes[hidden] { display: none; }
   .route-modes {
@@ -96,14 +102,29 @@
   }
   .hazard-badge[hidden] { display: none; }
   .evac-panel {
-    width: 340px; max-height: calc(100dvh - 160px); overflow-y: auto; padding: 10px 12px;
+    box-sizing: border-box; width: 340px; max-width: 100%; max-height: calc(100dvh - 160px); overflow-y: auto; padding: 10px 12px;
     background: #fff; border-radius: 16px; box-shadow: 0 1px 6px rgba(0, 0, 0, 0.3);
   }
   .evac-panel .route-message { margin: 0 0 8px; font-size: 0.85rem; line-height: 1.4; }
-  .evac-panel .route-actions { display: flex; gap: 8px; }
-  .evac-panel .route-actions .button { height: 40px; margin-top: 0; font-size: 0.85rem; }
+  .evac-panel .route-message[hidden] { display: none; }
+  .evac-panel .button { height: 40px; margin-top: 0; font-size: 0.85rem; }
+  .evac-panel .button[hidden] { display: none; }
+  /* 「やり直す」：丸い矢印の小さなアイコン */
+  .evac-reset {
+    flex: none; display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; padding: 0;
+    color: var(--muted); background: transparent; border: none; border-radius: 50%; cursor: pointer;
+  }
+  .evac-reset:hover { background: rgba(0, 0, 0, 0.06); }
+  .evac-reset svg { width: 20px; height: 20px; }
+  /* 避難先のピン（赤。現在地の青い点・出発地の青いピンと区別する） */
+  .evac-pin { position: relative; }
+  .evac-pin svg { display: block; width: 30px; height: 40px; filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.4)); }
+  .evac-pin span {
+    position: absolute; top: 5px; left: 0; width: 30px; text-align: center;
+    font-size: 0.85rem; font-weight: 700; line-height: 20px; color: #fff;
+  }
   /* 3件を横に並べ、左右にスワイプして切り替える（枠の影が切れないよう左右に3pxの余白を取る） */
-  .evac-slider { display: flex; align-items: center; gap: 4px; margin-top: 8px; }
+  .evac-slider { display: flex; align-items: center; gap: 4px; }
   .evac-slider[hidden] { display: none; }
   .evac-arrow {
     flex: none; width: 32px; height: 44px; padding: 0; font-family: inherit; font-size: 1.6rem; line-height: 1;
@@ -127,8 +148,8 @@
     flex: none; width: 26px; height: 26px; line-height: 26px; text-align: center;
     font-weight: 700; color: #fff; border-radius: 50%; background: var(--evac-color);
   }
-  .evac-name { font-weight: 700; }
-  .evac-detail { display: block; font-size: 0.82rem; color: #555; }
+  .evac-name { display: block; font-size: 0.82rem; color: #555; }
+  .evac-detail { display: block; font-size: 1.05rem; font-weight: 700; }
   /* ハザードマップの重ね表示（hazard.js） */
   .hazard-select {
     width: 100%; height: 44px; margin-top: 8px; padding: 0 10px; font-family: inherit; font-size: 0.85rem; font-weight: 700;
@@ -168,10 +189,20 @@
     <p class="hazard-badge" id="hazard-badge" role="status" hidden></p>
     <div class="map-panel" id="panel-emergency" role="tabpanel" aria-labelledby="tab-emergency" hidden>
       <div class="evac-panel">
-        <p class="route-message" id="evac-message">「避難場所を探す」を押すと、現在地から近い避難場所3か所への経路を表示します。</p>
-        <div class="route-actions">
-          <button type="button" class="button button-primary" id="evac-search">避難場所を探す</button>
-          <button type="button" class="button button-secondary" id="evac-reset">やり直す</button>
+        <!-- 検索中・エラーのときだけ出す -->
+        <p class="route-message" id="evac-message" role="status" hidden></p>
+        <button type="button" class="button button-primary" id="evac-search">避難場所を探す</button>
+        <!-- 検索後は、ボタンの代わりに避難先（距離・時間）を出す。左右で3か所を切り替える -->
+        <div class="evac-slider" id="evac-slider" hidden>
+          <button type="button" class="evac-arrow" id="evac-prev" aria-label="前の避難場所">‹</button>
+          <ol class="evac-list" id="evac-list"></ol>
+          <button type="button" class="evac-arrow" id="evac-next" aria-label="次の避難場所">›</button>
+          <button type="button" class="evac-reset" id="evac-reset" aria-label="やり直す" title="やり直す">
+            <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4.5 12a7.5 7.5 0 1 0 2.3-5.4"/>
+              <path d="M4 4.5v4.6h4.6"/>
+            </svg>
+          </button>
         </div>
         <!-- ハザードマップの重ね表示（hazard.js） -->
         <select class="hazard-select" id="hazard-select" aria-label="地図に重ねるハザードマップ">
@@ -185,15 +216,6 @@
           <summary>凡例</summary>
           <div id="hazard-legend-images"></div>
         </details>
-        <!-- テスト用：範囲内のランダムな地点から探す（本番では消す） -->
-        <div class="route-actions" style="margin-top: 8px;">
-          <button type="button" class="button button-secondary" id="evac-random">【テスト】ランダムな地点から探す</button>
-        </div>
-        <div class="evac-slider" id="evac-slider" hidden>
-          <button type="button" class="evac-arrow" id="evac-prev" aria-label="前の避難場所">‹</button>
-          <ol class="evac-list" id="evac-list"></ol>
-          <button type="button" class="evac-arrow" id="evac-next" aria-label="次の避難場所">›</button>
-        </div>
       </div>
     </div>
   </div>
@@ -294,13 +316,36 @@
   }
   window.setRouteMessage = setMessage;  // pins.js からも使う
 
-  // 経路の所要時間の表示。所要時間はサーバが自分の歩く速さ（歩行ログから計算）で出したもので、
-  // 坂道では遅くなる分を含む。経路も所要時間が一番短くなるように選ばれている
-  function walkTimeText(route) {
-    if (route.duration_min == null) return "";
-    const minutes = Math.max(1, Math.round(route.duration_min));
-    const slope = route.slope_m >= 1 ? `・うち坂道 約 ${Math.round(route.slope_m)} m` : "";
-    return `（約 ${minutes} 分${slope}）`;
+  // 経路の「距離・時間」の表示（例：850 m・12 分）。emergency.js からも使う。
+  // 所要時間はサーバが自分の歩く速さ（歩行ログから計算）で出したもので、坂道では遅くなる分を含む
+  function routeNumbers(route) {
+    const m = route.distance_m;
+    const distance = m >= 1000 ? `${(m / 1000).toFixed(1)} km` : `${Math.round(m)} m`;
+    if (route.duration_min == null) return distance;
+    return `${distance}・${Math.max(1, Math.round(route.duration_min))} 分`;
+  }
+
+  // 経路の線の真ん中あたりの地点（距離・時間のラベルを置く場所）
+  function routeMidpoint(coords) {
+    const pts = coords.map((c) => L.latLng(c));
+    const lengths = pts.slice(1).map((p, i) => pts[i].distanceTo(p));
+    let rest = lengths.reduce((a, b) => a + b, 0) / 2;
+    for (let i = 0; i < lengths.length; i++) {
+      if (rest <= lengths[i]) {
+        const t = lengths[i] ? rest / lengths[i] : 0;
+        return L.latLng(pts[i].lat + (pts[i + 1].lat - pts[i].lat) * t, pts[i].lng + (pts[i + 1].lng - pts[i].lng) * t);
+      }
+      rest -= lengths[i];
+    }
+    return pts[0];
+  }
+
+  // 経路の脇に「距離・時間」のラベルを出す。返したレイヤーを地図から外せば消える
+  function routeLabel(route, color) {
+    const label = L.tooltip({ permanent: true, direction: "right", offset: [10, 0], className: "route-label" })
+      .setLatLng(routeMidpoint(route.coords)).setContent(routeNumbers(route));
+    label.on("add", () => label.getElement().style.setProperty("--route-color", color));
+    return label;
   }
 
   function reset() {
@@ -325,7 +370,7 @@
     const label = facility ? `出発：${facility.name}` : "出発地";
     origMarker = L.marker(latlng).addTo(map).bindTooltip(label, { permanent: true });
     resetBtn.hidden = false;
-    setMessage("次に目的地をタップするか、施設のピンを選んで「ここへ行く」を押してください。");
+    setMessage("目的地をタップ、または施設の「ここへ行く」");
     // 先に施設の「ここへ行く」が押されていたら、その施設への経路を探す
     if (pendingFacility) {
       const target = pendingFacility;
@@ -365,28 +410,6 @@
     return a.start.name === b.start.name && a.goal.name === b.goal.name && Math.abs(a.distance_m - b.distance_m) < 1;
   }
 
-  // 選んでいないほうの経路との違いを1行で表す
-  function compareText(slope, normal) {
-    if (!slope.slope_aware) return "※地図データに標高が無いため、坂道を考慮できていません。";
-    if (sameRoute(slope, normal)) return "坂道を通っても一番早いため、通常と同じ経路です。";
-    const diff = Math.round(normal.duration_min - slope.duration_min);
-    const diffText = diff >= 1 ? `約 ${diff} 分` : "少し";
-    const lessSlope = Math.round(normal.slope_m - slope.slope_m);
-    if (routeMode === "slope") {
-      return `通常の経路より${diffText}早く着きます`
-        + (lessSlope >= 1 ? `（坂道が 約 ${lessSlope} m 少ない）。` : "。") + "灰色の点線は通常の経路です。";
-    }
-    return `坂道を考慮した経路なら${diffText}早く着きます（灰色の点線）。`;
-  }
-
-  // 計算に使った歩く速さ（歩行ログから計算。足りないところは標準・仮の値）
-  function speedsText(s) {
-    if (!s) return "";
-    const flat = `普通の道 ${walkFormat.speed(s.speed_m_per_min)}` + (s.is_default ? "（標準）" : "");
-    const slope = `坂道 ${walkFormat.speed(s.slope_speed_m_per_min)}` + (s.slope_is_default ? "（仮）" : "");
-    return `\n計算に使った速さ：${flat}・${slope}`;
-  }
-
   // routeResult を routeMode に合わせて描く。fit が true なら両方の経路が収まるように地図を動かす
   function showRoute(fit) {
     const { data, destFac } = routeResult;
@@ -413,7 +436,7 @@
       origMarker.setLatLng(startGate).setTooltipContent(`出発：${startLabel}`);
     } else if (data.orig_facility && data.orig_facility.inside) {
       // 出発地が敷地の中 → 一番近くなる門から出る
-      startLabel = `出発地（${data.orig_facility.name}内）→ ${route.start.name || "入口"}`;
+      startLabel = `${data.orig_facility.name}内`;
       lines.push(insideLeg(orig, startGate));
     }
     let goalLabel = "目的地";
@@ -425,15 +448,14 @@
       destMarker = L.marker(dest).addTo(map).bindTooltip(goalLabel, { permanent: true });
     } else if (data.dest_facility && data.dest_facility.inside) {
       // 目的地が敷地の中 → 一番近くなる門から入る
-      goalLabel = `${route.goal.name || "入口"} → 目的地（${data.dest_facility.name}内）`;
+      goalLabel = `${data.dest_facility.name}内`;
       lines.push(insideLeg(goalGate, dest));
     }
+    lines.push(routeLabel(route, "#2E6BB0"));  // 距離・時間は経路の脇に出す
     routeLine = L.featureGroup(lines).addTo(map);
     if (fit) map.fitBounds(routeLine.getBounds(), { padding: [30, 30] });
     modesEl.hidden = false;
-    const modeName = routeMode === "normal" ? "通常" : "坂道考慮";
-    setMessage(`【${modeName}】${startLabel} → ${goalLabel}　約 ${Math.round(route.distance_m)} m${walkTimeText(route)}\n`
-      + compareText(data, normal) + speedsText(data.speeds));
+    setMessage(`${startLabel} → ${goalLabel}`);  // 案内に出すのは出発地と目的地だけ
   }
 
   // 経路を探して表示する。目的地は destFac（施設）か destLatLng（地点）のどちらか
@@ -475,7 +497,7 @@
     if (window.emergencyMode) return;
     if (!orig) {
       pendingFacility = facility;
-      setMessage(`${facility.name}へ行きます。出発地を地図でタップするか、施設の「ここから出発」か、右下の「現在地」を押してください。`);
+      setMessage(`${facility.name}へ：出発地をタップ、または右下の現在地ボタン`);
       return;
     }
     if (origFacility && origFacility.id === facility.id) {

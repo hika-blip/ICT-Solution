@@ -1,5 +1,6 @@
 // 緊急時モード。home.html の地図 `map` を使う。
 // 現在地（取れなければ地図のタップ位置）から、近い避難場所3か所への経路を /api/evacuate/routes で探して地図に描く。
+// 画面の表示は最小限にする：探す前は「避難場所を探す」ボタンだけ、探した後は避難先の距離・時間だけ。
 // 平常時のタブに戻すと、避難経路を消して元の操作（経路検索・ピン・歩行ログ）に戻る。
 (function () {
   const COLORS = ["#D93025", "#F29900", "#8E24AA"];  // 1位・2位・3位
@@ -12,24 +13,38 @@
   const sliderEl = document.getElementById("evac-slider");
   const prevBtn = document.getElementById("evac-prev");
   const nextBtn = document.getElementById("evac-next");
-  const START_MESSAGE = "「避難場所を探す」を押すと、現在地から近い避難場所3か所への経路を表示します。";
+  const searchBtn = document.getElementById("evac-search");
 
   let origin = null;     // 避難経路の出発地（現在地かタップした地点）
   let originMarker = null;
-  let routes = [];       // [{ line, marker, item, data }]
+  let routes = [];       // [{ line, marker, label, item, data }]
   let searching = false;
   let current = 0;       // 選択中の経路の番号
 
   window.emergencyMode = false;
 
-  function setMessage(text) { messageEl.textContent = text; }
+  // 検索中・エラーの案内。空文字なら行ごと隠す
+  function setMessage(text) {
+    messageEl.textContent = text;
+    messageEl.hidden = !text;
+  }
+
+  // 避難先のピン（赤。中の数字は近い順）
+  function siteIcon(rank) {
+    return L.divIcon({
+      className: "evac-pin", iconSize: [30, 40], iconAnchor: [15, 40], tooltipAnchor: [0, -36],
+      html: '<svg viewBox="0 0 30 40" aria-hidden="true"><path d="M15 1C7.3 1 1 7.2 1 14.9 1 25 15 39 15 39s14-14 14-24.1C29 7.2 22.7 1 15 1z"'
+        + ` fill="#D93025" stroke="#fff" stroke-width="2"/></svg><span>${rank}</span>`,
+    });
+  }
 
   function clearRoutes() {
-    routes.forEach((r) => { map.removeLayer(r.line); map.removeLayer(r.marker); });
+    routes.forEach((r) => [r.line, r.marker, r.label].forEach((layer) => map.removeLayer(layer)));
     routes = [];
     current = 0;
     listEl.replaceChildren();
     sliderEl.hidden = true;
+    searchBtn.hidden = false;  // 探す前の状態に戻す
   }
 
   function clearAll() {
@@ -72,14 +87,14 @@
       const on = i === index;
       r.line.setStyle({ weight: on ? 8 : 4, opacity: on ? 1 : 0.45 });
       if (on) r.line.bringToFront();
+      // 距離・時間のラベルは選んだ経路の脇にだけ出す
+      if (on) r.label.addTo(map); else map.removeLayer(r.label);
+      r.marker.setZIndexOffset(on ? 1000 : 0);
       r.item.setAttribute("aria-pressed", on ? "true" : "false");
     });
     const r = routes[index];
     map.fitBounds(r.line.getBounds(), { padding: [30, 30] });
-    r.marker.openTooltip();
     listEl.scrollTo({ left: slideLeft(index), behavior: "smooth" });  // 地図側で選んだときも一覧をそのカードへ
-    const d = r.data;
-    setMessage(`${d.site.name} へ約 ${Math.round(d.distance_m)} m${walkTimeText(d)}`);
   }
 
   function showRoutes(list) {
@@ -87,7 +102,8 @@
     list.forEach((data, i) => {
       const color = COLORS[i % COLORS.length];
       const line = L.polyline(data.coords, { color, weight: 5, opacity: 0.9 }).addTo(map);
-      const marker = L.marker([data.site.lat, data.site.lon]).addTo(map).bindTooltip(data.site.name);
+      const marker = L.marker([data.site.lat, data.site.lon], { icon: siteIcon(i + 1) }).addTo(map).bindTooltip(data.site.name);
+      const label = routeLabel(data, color);  // 距離・時間（home.html）
       line.on("click", () => select(i));
       marker.on("click", () => select(i));
 
@@ -99,9 +115,9 @@
       name.textContent = data.site.name;
       const detail = document.createElement("span");
       detail.className = "evac-detail";
-      detail.textContent = `${data.site.kinds.join("・")}　約 ${Math.round(data.distance_m)} m${walkTimeText(data)}`;
+      detail.textContent = routeNumbers(data);  // 距離・時間（home.html）
       const text = document.createElement("span");
-      text.append(name, detail);
+      text.append(detail, name);
 
       const btn = document.createElement("button");
       btn.type = "button";
@@ -113,8 +129,11 @@
       const li = document.createElement("li");
       li.append(btn);
       listEl.append(li);
-      routes.push({ line, marker, item: btn, data });
+      routes.push({ line, marker, label, item: btn, data });
     });
+    // 「避難場所を探す」ボタンの代わりに、避難先の距離・時間を出す
+    setMessage("");
+    searchBtn.hidden = true;
     sliderEl.hidden = false;
     select(0);
   }
@@ -126,12 +145,12 @@
   async function search() {
     if (searching) return false;
     if (!origin) {
-      setMessage("現在地を取得できていません。地図をタップして出発地を選んでください。");
+      setMessage("現在地を取得できません。地図をタップして出発地を選んでください。");
       return false;
     }
     searching = true;
     clearRoutes();
-    setMessage("避難場所を検索しています…");
+    setMessage("検索中…");
     try {
       const res = await fetch(`/api/evacuate/routes?lat=${origin.lat}&lon=${origin.lng}&count=3`);
       if (res.status === 401) { location.href = "/login"; return false; }
@@ -159,7 +178,7 @@
     panelEmergency.hidden = !emergency;
     if (emergency) {
       reset();  // 平常時の経路・印を消す（home.html）
-      setMessage(START_MESSAGE);
+      setMessage("");
       if (window.currentLocation) setOrigin(window.currentLocation);
     } else {
       clearAll();
@@ -171,33 +190,16 @@
 
   tabNormal.addEventListener("click", () => setMode(false));
   tabEmergency.addEventListener("click", () => setMode(true));
-  document.getElementById("evac-search").addEventListener("click", () => {
+  searchBtn.addEventListener("click", () => {
     // 現在地が取れているなら、いつでも最新の現在地から探し直す
     if (window.currentLocation) setOrigin(window.currentLocation);
     search();
   });
   document.getElementById("evac-reset").addEventListener("click", () => {
     clearAll();
-    setMessage(START_MESSAGE);
-  });
-
-  // ---- テストモード：地図の範囲（/api/area）の中のランダムな地点から探す ----
-  // 道から遠い地点（範囲内でも海や山）は経路が出ないので、出るまで数回やり直す
-  const RANDOM_TRIES = 15;
-  document.getElementById("evac-random").addEventListener("click", async () => {
-    const area = map.options.maxBounds;
-    if (!area) { setMessage("地図の範囲を取得できていません。"); return; }
-    for (let i = 0; i < RANDOM_TRIES; i++) {
-      const lat = area.getSouth() + Math.random() * (area.getNorth() - area.getSouth());
-      const lon = area.getWest() + Math.random() * (area.getEast() - area.getWest());
-      setOrigin(L.latLng(lat, lon));
-      if (await search()) {
-        setMessage(`【テスト】ランダムな地点(${lat.toFixed(5)}, ${lon.toFixed(5)})から　` + messageEl.textContent);
-        return;
-      }
-      if (searching) return;  // 検索中のボタン連打
-    }
-    setMessage("【テスト】経路の出る地点が見つかりませんでした。もう一度押してください。");
+    setMessage("");
+    // 現在地が取れているなら、出発地の印は現在地に戻しておく
+    if (window.currentLocation) setOrigin(window.currentLocation);
   });
 
   // 緊急時は地図のタップで出発地を決められる（現在地が取れないとき用）

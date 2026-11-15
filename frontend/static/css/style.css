@@ -191,23 +191,69 @@ body {
   margin-top: 8px; padding: 6px 12px; font-family: inherit; font-size: 0.85rem;
   color: var(--danger); background: var(--danger-bg); border: none; border-radius: 8px; cursor: pointer;
 }
+/* ピン・危険個所の投稿シート（下から出る）。幅はアプリの画面（.app）に合わせる */
 .pin-sheet {
-  position: fixed; left: 0; right: 0; bottom: 0; z-index: 1200; max-height: 80vh; overflow-y: auto;
-  padding: 16px; background: #fff; border-radius: 16px 16px 0 0; box-shadow: 0 -4px 16px rgba(0,0,0,.25);
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 1200;
+  width: 100%; max-width: 430px; max-height: 80vh; max-height: 80dvh; margin: 0 auto; overflow-y: auto;
+  padding: 12px 16px 16px; background: #fff; border-radius: 16px 16px 0 0; box-shadow: 0 -4px 16px rgba(0,0,0,.25);
+}
+@media (min-width: 600px) {
+  .pin-sheet { bottom: 24px; border-radius: 16px 16px 24px 24px; }  /* PCではアプリの枠の下端に合わせる */
 }
 .pin-sheet[hidden] { display: none; }
-.pin-sheet h2 { margin: 0 0 4px; font-size: 1.1rem; }
-.pin-sheet textarea {
-  width: 100%; min-height: 80px; box-sizing: border-box; padding: 8px; font-size: 1rem;
-  font-family: inherit; border: 2px solid var(--border); border-radius: var(--radius);
+.sheet-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.pin-sheet h2 { margin: 0; font-size: 1.05rem; }
+.sheet-close {
+  flex: none; display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; padding: 0;
+  color: var(--muted); background: transparent; border: none; border-radius: 50%; cursor: pointer;
 }
-.pin-where { margin: 0 0 8px; font-size: 0.8rem; color: var(--muted); }
-.pin-tags { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
-.pin-check { display: inline-flex; align-items: center; gap: 4px; padding: 6px 10px; border: 2px solid var(--border); border-radius: 999px; font-size: 0.9rem; }
-.pin-check:has(input:checked) { border-color: var(--blue); background: var(--blue-light); }
-.pin-preview { display: block; max-width: 100%; max-height: 160px; margin: 8px 0; border-radius: 8px; }
-.pin-error { margin: 8px 0 0; color: var(--danger); font-size: 0.9rem; min-height: 1.2em; }
-.pin-public { display: flex; align-items: center; gap: 8px; margin: 8px 0; font-size: 0.9rem; }
+.sheet-close:hover { background: rgba(0, 0, 0, 0.06); }
+.sheet-close svg { width: 22px; height: 22px; }
+.pin-where { display: none; }  /* 緯度・経度は利用者には不要なので出さない（地図のピンで分かる） */
+.sheet-label { margin: 10px 0 4px; font-size: 0.8rem; font-weight: 700; color: var(--muted); }
+.pin-tags { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 8px; }
+/* タグ・選択肢：チェック欄は隠し、選ぶと色が付く丸いボタンにする */
+.pin-check {
+  position: relative; display: inline-flex; align-items: center; min-height: 34px; padding: 0 12px;
+  font-size: 0.85rem; line-height: 1.2; border: 1.5px solid var(--border); border-radius: 999px; cursor: pointer;
+}
+.pin-check input { position: absolute; opacity: 0; width: 1px; height: 1px; pointer-events: none; }
+.pin-check:has(input:checked) { color: #fff; border-color: var(--blue); background: var(--blue); font-weight: 700; }
+.pin-check-danger:has(input:checked) { border-color: var(--danger); background: var(--danger); }
+.pin-check:has(input:focus-visible) { box-shadow: 0 0 0 3px rgba(46, 107, 176, 0.3); }
+.pin-sheet textarea {
+  display: block; width: 100%; min-height: 64px; margin-top: 4px; padding: 8px 10px; font-size: 1rem; resize: vertical;
+  font-family: inherit; border: 1.5px solid var(--border); border-radius: var(--radius);
+}
+.sheet-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 10px; }
+/* 写真の選択：標準の「ファイルを選択」の代わりにボタン風の表示にする */
+.sheet-photo {
+  position: relative; display: inline-flex; align-items: center; gap: 6px; height: 38px; padding: 0 14px;
+  font-size: 0.85rem; font-weight: 700; color: var(--blue); background: var(--blue-light); border-radius: 999px; cursor: pointer;
+}
+.sheet-photo svg { width: 20px; height: 20px; }
+.sheet-photo input { position: absolute; opacity: 0; width: 1px; height: 1px; pointer-events: none; }
+.sheet-photo:has(input:focus-visible) { box-shadow: 0 0 0 3px rgba(46, 107, 176, 0.3); }
+/* 公開・非公開のスイッチ */
+.sheet-switch { display: inline-flex; align-items: center; gap: 8px; font-size: 0.85rem; font-weight: 700; cursor: pointer; }
+.sheet-switch input { position: absolute; opacity: 0; width: 1px; height: 1px; pointer-events: none; }
+.sheet-switch-track {
+  position: relative; flex: none; width: 40px; height: 24px; background: #C3CBD5; border-radius: 999px; transition: background .15s;
+}
+.sheet-switch-track::after {
+  content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px;
+  background: #fff; border-radius: 50%; box-shadow: 0 1px 2px rgba(0,0,0,.3); transition: transform .15s;
+}
+.sheet-switch:has(input:checked) .sheet-switch-track { background: var(--blue); }
+.sheet-switch:has(input:checked) .sheet-switch-track::after { transform: translateX(16px); }
+.sheet-switch:has(input:focus-visible) .sheet-switch-track { box-shadow: 0 0 0 3px rgba(46, 107, 176, 0.3); }
+.pin-preview { display: block; max-width: 100%; max-height: 120px; margin: 8px 0 0; border-radius: 8px; }
+.pin-preview[hidden] { display: none; }  /* 写真を選ぶまでは何も出さない */
+.pin-error { margin: 6px 0 0; color: var(--danger); font-size: 0.85rem; }
+.pin-error:empty { display: none; }
+.sheet-submit { height: 48px; margin-top: 12px; font-size: 1rem; }
+.button-hazard { border-color: var(--danger); background: var(--danger); }
+.button-hazard:hover { border-color: #8C1D18; background: #8C1D18; }
 .pin-toggle {
   margin: 8px 8px 0 0; padding: 6px 12px; font-family: inherit; font-size: 0.85rem;
   color: var(--blue-dark); background: var(--blue-light); border: none; border-radius: 8px; cursor: pointer;

@@ -233,37 +233,49 @@
   </div>
 </main>
 <form class="pin-sheet" id="pin-sheet" hidden>
-  <h2>ピンを立てる</h2>
-  <p class="pin-where" id="pin-where"></p>
-  <div class="pin-tags" id="pin-tags"></div>
-  <textarea name="body" maxlength="500" placeholder="ひとこと（任意。写真だけでもOK）"></textarea>
-  <input type="file" id="pin-photo" accept="image/jpeg,image/png,image/webp">
-  <img class="pin-preview" id="pin-preview" alt="選んだ写真" hidden>
-  <label class="pin-public">
-    <input type="checkbox" name="is_public" checked>
-    <span>みんなに公開する（オフにすると自分だけに表示）</span>
-  </label>
-  <p class="pin-error" id="pin-error"></p>
-  <div class="route-actions">
-    <button type="button" class="button button-secondary" id="pin-cancel">キャンセル</button>
-    <button type="submit" class="button button-primary">投稿する</button>
+  <div class="sheet-head">
+    <h2>ピンを立てる</h2>
+    <button type="button" class="sheet-close" id="pin-cancel" aria-label="閉じる" title="閉じる"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
   </div>
+  <p class="pin-where" id="pin-where"></p>
+  <p class="sheet-label">タグ（任意）</p>
+  <div class="pin-tags" id="pin-tags"></div>
+  <textarea name="body" maxlength="500" rows="2" placeholder="ひとこと（写真だけでもOK）"></textarea>
+  <div class="sheet-row">
+    <label class="sheet-photo"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M4 8h3l2-2.5h6L17 8h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg><span>写真を追加</span>
+      <input type="file" id="pin-photo" accept="image/jpeg,image/png,image/webp">
+    </label>
+    <label class="sheet-switch">
+      <input type="checkbox" name="is_public" checked>
+      <span class="sheet-switch-track" aria-hidden="true"></span>
+      <span>みんなに公開</span>
+    </label>
+  </div>
+  <img class="pin-preview" id="pin-preview" alt="選んだ写真" hidden>
+  <p class="pin-error" id="pin-error"></p>
+  <button type="submit" class="button button-primary sheet-submit">投稿する</button>
 </form>
 <form class="pin-sheet" id="hazard-sheet" hidden>
-  <h2>危険個所を投稿する</h2>
-  <p class="pin-where" id="hazard-where"></p>
-  <div class="pin-tags" id="hazard-status">
-    <label class="pin-check"><input type="radio" name="status" value="passable" checked><span>歩いて通れる（注意）</span></label>
-    <label class="pin-check"><input type="radio" name="status" value="blocked"><span>通行不可</span></label>
+  <div class="sheet-head">
+    <h2>危険個所を投稿する</h2>
+    <button type="button" class="sheet-close" id="hazard-cancel" aria-label="閉じる" title="閉じる"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
   </div>
-  <div class="pin-tags" id="hazard-tags" aria-label="危険の種類（任意）"></div>
-  <input type="file" id="hazard-photo" accept="image/jpeg,image/png,image/webp">
+  <p class="pin-where" id="hazard-where"></p>
+  <p class="sheet-label">通れるか</p>
+  <div class="pin-tags" id="hazard-status">
+    <label class="pin-check"><input type="radio" name="status" value="passable" checked><span>注意して通れる</span></label>
+    <label class="pin-check pin-check-danger"><input type="radio" name="status" value="blocked"><span>通行不可</span></label>
+  </div>
+  <p class="sheet-label">危険の種類（任意）</p>
+  <div class="pin-tags" id="hazard-tags"></div>
+  <div class="sheet-row">
+    <label class="sheet-photo"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M4 8h3l2-2.5h6L17 8h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg><span>写真を追加</span>
+      <input type="file" id="hazard-photo" accept="image/jpeg,image/png,image/webp">
+    </label>
+  </div>
   <img class="pin-preview" id="hazard-preview" alt="選んだ写真" hidden>
   <p class="pin-error" id="hazard-error"></p>
-  <div class="route-actions">
-    <button type="button" class="button button-secondary" id="hazard-cancel">キャンセル</button>
-    <button type="submit" class="button button-primary">投稿する</button>
-  </div>
+  <button type="submit" class="button button-primary button-hazard sheet-submit">投稿する</button>
 </form>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script>
